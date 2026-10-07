@@ -1,0 +1,13 @@
+# 编译产物
+*.exe
+*.res
+*.o
+dist/
+
+# 离线渲染验证用的测试脚手架（开发时本地生成，不入库）
+test_render*
+test_gaze*
+test_look*
+test_size*
+test_shot*
+*.ppm

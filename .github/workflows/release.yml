@@ -1,0 +1,196 @@
+name: 构建并发布
+
+# ───────────────────────────────────────────────────────────────
+# 触发方式说明（仓库主推 AtomGit，经中转同步到 GitHub，tag 有几种可能到不了）
+#
+#   1. push tags '**'      tag 同步过来了 → 正常构建发布
+#   2. push 分支           只有分支同步过来、tag 没过来 → 检查 HEAD 是否正好在 tag 上
+#   3. schedule            定时兜底：中转工具用 GITHUB_TOKEN 推送时，GitHub 不会再触发
+#                          任何 workflow，此时只能靠轮询补发（幂等，已发过就跳过）
+#   4. workflow_dispatch   手动指定 tag，最可靠的兜底
+#
+# 注意：tags 用 '**' 而不是 'v*' —— glob 匹配，写 v* 的话 v 以外的 tag 一律漏掉。
+# ───────────────────────────────────────────────────────────────
+on:
+  push:
+    tags:
+      - '**'
+    branches:
+      - main
+      - master
+  schedule:
+    - cron: '23 */6 * * *'      # 每 6 小时兜底轮询一次，觉得慢可以改成 '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要构建发布的 tag（留空 = 取仓库最新 tag）'
+        required: false
+        default: ''
+      force:
+        description: '强制重新发布（即使该 tag 已有 Release）'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# 中转同步可能一次性推来多个 ref，串行执行避免两个 run 抢着写同一个 Release
+concurrency:
+  group: kimi-pet-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # 必须拉全历史，否则 git describe / tag --points-at 拿不到东西
+          fetch-tags: true
+
+      # ── 诊断：中转没触发时，先看这一段就知道 tag 到底有没有同步过来 ──
+      - name: 诊断：仓库 refs 状态
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          echo "event_name = $EVENT"
+          echo "ref        = $REF"
+          echo "ref_type   = $REF_TYPE"
+          echo "ref_name   = $REF_NAME"
+          echo "sha        = $SHA"
+          echo "--- 远程 tag（按创建时间倒序，最多 20 个）---"
+          git tag -l --sort=-creatordate | head -20
+          echo "--- HEAD 指向的 tag ---"
+          git tag --points-at HEAD
+          echo "--- remote ---"
+          git ls-remote --tags origin | head -20 || true
+
+      # ── 解析版本号 + 决定要不要发布 ──
+      - name: 解析版本号
+        id: meta
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          FORCE: ${{ github.event.inputs.force }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG=""; RELEASE="false"
+
+          latest_tag() { git tag -l --sort=-creatordate | head -1; }
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            # 手动：给了就用给的，没给就取最新的
+            TAG="${INPUT_TAG:-$(latest_tag)}"
+            RELEASE="true"
+          elif [ "$REF_TYPE" = "tag" ]; then
+            TAG="$REF_NAME"
+            RELEASE="true"
+          else
+            # 分支 push：看 HEAD 是否正好落在某个 tag 上（tag 和分支一起同步过来的情况）
+            EXACT="$(git describe --tags --exact-match HEAD 2>/dev/null || true)"
+            if [ -n "$EXACT" ]; then
+              TAG="$EXACT"; RELEASE="true"
+            elif [ "$EVENT" = "schedule" ]; then
+              # 定时兜底：取最新 tag，没发过就补发
+              TAG="$(latest_tag)"
+              RELEASE="true"
+            else
+              TAG="$(git describe --tags --always 2>/dev/null || echo dev)"
+              RELEASE="false"
+              echo "::warning::分支 push 且 HEAD 不在 tag 上 → 只构建校验，不发布"
+            fi
+          fi
+
+          [ -z "$TAG" ] && TAG="dev"
+
+          # 幂等：该 tag 的 Release 里已经有 x64 产物就跳过（除非手动勾了 force）
+          if [ "$RELEASE" = "true" ] && [ "$FORCE" != "true" ] && [ "$TAG" != "dev" ]; then
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              if gh release view "$TAG" --json assets -q '.assets[].name' 2>/dev/null | grep -qx 'KimiPet_x64.exe'; then
+                echo "tag $TAG 的 Release 已存在且产物齐全 → 跳过"
+                RELEASE="false"
+              fi
+            fi
+          fi
+
+          echo "tag=$TAG"              >> "$GITHUB_OUTPUT"
+          echo "should_release=$RELEASE" >> "$GITHUB_OUTPUT"
+          echo "==> tag=$TAG  should_release=$RELEASE"
+
+      - name: 安装 mingw-w64 交叉编译器
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mingw-w64 zip
+          x86_64-w64-mingw32-gcc --version | head -1
+          i686-w64-mingw32-gcc  --version | head -1
+
+      - name: 编译 exe
+        run: sh build.sh
+
+      - name: 检查产物
+        run: |
+          ls -la *.exe
+          file KimiPet_x64.exe KimiPet_x86.exe
+          test -s KimiPet_x64.exe || { echo "64 位产物为空"; exit 1; }
+          test -s KimiPet_x86.exe || { echo "32 位产物为空"; exit 1; }
+
+      - name: 打包
+        id: pkg
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          NAME="KimiPet-${TAG}"
+          mkdir -p "dist/${NAME}"
+          cp KimiPet_x64.exe KimiPet_x86.exe KimiPet.ico README.md LICENSE "dist/${NAME}/"
+          cd dist
+          zip -qr "${NAME}.zip" "${NAME}"
+          cd "${NAME}"
+          sha256sum *.exe > ../SHA256SUMS.txt
+          cd ..
+          echo "zip=${NAME}.zip" >> "$GITHUB_OUTPUT"
+          ls -la
+
+      - name: 上传构建产物（Artifacts）
+        uses: actions/upload-artifact@v4
+        with:
+          name: KimiPet-${{ steps.meta.outputs.tag }}
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: 发布到 Release
+        if: steps.meta.outputs.should_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}     # 显式指定，别让它自己猜
+          name: Kimi 小圆球 ${{ steps.meta.outputs.tag }}
+          body_path: README.md
+          draft: false
+          prerelease: false
+          files: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 小结
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          RELEASED: ${{ steps.meta.outputs.should_release }}
+        run: |
+          echo "tag      : $TAG"
+          echo "已发布   : $RELEASED"
+          if [ "$RELEASED" != "true" ]; then
+            echo "::notice::本次未发布（非 tag 事件或已发布过）。如需补发：Actions → 本工作流 → Run workflow → 填 tag 名。"
+          fi
