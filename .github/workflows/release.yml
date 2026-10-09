@@ -135,14 +135,20 @@ jobs:
           i686-w64-mingw32-gcc  --version | head -1
 
       - name: 编译 exe
-        run: sh build.sh
+        env:
+          # 显式指定产物目录，不依赖 ../exe 在 runner 目录结构下的解析结果。
+          # runner.temp 在仓库外，和本地 ../exe 的「产物不进仓库」约定一致。
+          OUT: ${{ runner.temp }}/kimi-pet-exe
+        run: |
+          sh build.sh
+          echo "EXE_DIR=${{ runner.temp }}/kimi-pet-exe" >> "$GITHUB_ENV"
 
       - name: 检查产物
         run: |
-          ls -la *.exe
-          file KimiPet_x64.exe KimiPet_x86.exe
-          test -s KimiPet_x64.exe || { echo "64 位产物为空"; exit 1; }
-          test -s KimiPet_x86.exe || { echo "32 位产物为空"; exit 1; }
+          ls -la "$EXE_DIR/"
+          file "$EXE_DIR/KimiPet_x64.exe" "$EXE_DIR/KimiPet_x86.exe"
+          test -s "$EXE_DIR/KimiPet_x64.exe" || { echo "64 位产物为空"; exit 1; }
+          test -s "$EXE_DIR/KimiPet_x86.exe" || { echo "32 位产物为空"; exit 1; }
 
       - name: 打包
         id: pkg
@@ -151,14 +157,22 @@ jobs:
         run: |
           NAME="KimiPet-${TAG}"
           mkdir -p "dist/${NAME}"
-          cp KimiPet_x64.exe KimiPet_x86.exe KimiPet.ico README.md LICENSE "dist/${NAME}/"
+          # 从 runner.temp 拷回工作区再上传：upload-artifact 的路径不能超出工作区。
+          # zip 里只放两个 exe —— 不放 README（那是仓库文档）、不放 ico /
+          # 使用说明 / LICENSE，Release 正文与附件保持精简。
+          cp "$EXE_DIR/KimiPet_x64.exe" "$EXE_DIR/KimiPet_x86.exe" "dist/${NAME}/"
           cd dist
           zip -qr "${NAME}.zip" "${NAME}"
           cd "${NAME}"
           sha256sum *.exe > ../SHA256SUMS.txt
           cd ..
           echo "zip=${NAME}.zip" >> "$GITHUB_OUTPUT"
-          ls -la
+          echo "--- zip 内容 ---"
+          unzip -l "${NAME}.zip"
+          echo "--- 确认只有 exe ---"
+          for f in README.md KimiPet.ico LICENSE 使用说明.txt; do
+            test ! -e "${NAME}/$f" || { echo "$f 不该出现在产物里"; exit 1; }
+          done
 
       - name: 上传构建产物（Artifacts）
         uses: actions/upload-artifact@v4
@@ -174,8 +188,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}     # 显式指定，别让它自己猜
-          name: Kimi 小圆球 ${{ steps.meta.outputs.tag }}
-          body_path: README.md
+          name: ${{ steps.meta.outputs.tag }}
+          # 正文留空：既不写 body 也不给 body_path，由作者自己在页面上填。
+          # 刻意不设 body:"" —— 该 action 更新已存在的 Release 时会覆盖正文，
+          # 那样你手写的内容会被后来的重跑抹掉。省略 = 新建时为空、已存在时不改。
           draft: false
           prerelease: false
           files: |

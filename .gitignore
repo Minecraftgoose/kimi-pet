@@ -4,10 +4,12 @@
 *.o
 dist/
 
-# 离线渲染验证用的测试脚手架（开发时本地生成，不入库）
-test_render*
-test_gaze*
-test_look*
-test_size*
-test_shot*
+# 预览图（按 AGENTS.md 放 preview/，不入库）
+preview/
+
+# 测试文件（按 AGENTS.md 放 tmp/，交付时清空；不入库）
+tmp/
+
+# 离线渲染验证用的测试脚手架
+test_*
 *.ppm
