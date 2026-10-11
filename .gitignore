@@ -1,15 +1,8 @@
-# 编译产物
 *.exe
 *.res
 *.o
 dist/
-
-# 预览图（按 AGENTS.md 放 preview/，不入库）
-preview/
-
-# 测试文件（按 AGENTS.md 放 tmp/，交付时清空；不入库）
-tmp/
-
-# 离线渲染验证用的测试脚手架
+.preview/
+.tmp/
 test_*
 *.ppm

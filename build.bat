@@ -1,20 +1,16 @@
 @echo off
-REM Kimi 小圆球 · Windows 本机编译脚本
-REM 需要 MinGW-w64：MSYS2 的 mingw64 shell，或 w64devkit（https://github.com/skeeto/w64devkit）
-REM 双击本文件即可，图标与版本信息由 icon.rc 自动嵌入。
 setlocal
 cd /d "%~dp0"
 
 set CFLAGS=-O2 -mwindows
 set LIBS=-lgdi32 -luser32 -ladvapi32 -lwinmm -lshell32 -lm
 
-REM 编译产物一律输出到 ..\exe（见 AGENTS.md）
 if not exist "..\exe" mkdir "..\exe"
 
 echo   -^> 编译图标资源
 windres --codepage=65001 icon.rc -O coff -o icon.res
 if errorlevel 1 (
-  echo    （--codepage 不被支持，退回默认编码重试）
+  echo    （--codepage 不被支持）
   windres icon.rc -O coff -o icon.res
   if errorlevel 1 goto :fail
 )
