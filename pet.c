@@ -1,12 +1,4 @@
-/* =====================================================================
-   Kimi 小圆球 · 原生 Win32 桌面宠物
-   - 纯软件渲染 + UpdateLayeredWindow 透明置顶窗口
-   - 兼容 Windows 7 / 8 / 10 / 11，零依赖、单文件 exe
-   - 编译：x86_64-w64-mingw32-gcc -O2 -mwindows -o KimiPet.exe pet.c \
-           -lgdi32 -luser32 -ladvapi32 -lwinmm -lshell32 -lm
-   ===================================================================== */
 #ifdef RENDER_TEST
-/* 离线渲染验证：不依赖 Win32，直接跑渲染内核 */
 #include <math.h>
 #include <stdint.h>
 typedef struct { int x,y; } POINT;
@@ -49,35 +41,28 @@ static double clampd(double v,double a,double b){ return v<a?a:(v>b?b:v); }
 static double lerpd(double a,double b,double t){ return a+(b-a)*t; }
 static int clampi(int v,int a,int b){ return v<a?a:(v>b?b:v); }
 
-/* ---------------- 配色 / 参数（与网页版一致） ---------------- */
+/* ---------------- 配色 / 参数 ---------------- */
 typedef struct { unsigned char r,g,b; } RGB8;
 
-/* 球体五层色：中心深 → 边缘浅。运行时可变（8 色预设切换） */
 static RGB8 g_skin[5]={
   {0x4a,0x86,0xd8},{0x5a,0x95,0xe0},{0x6c,0xa4,0xe8},{0x8c,0xb9,0xf0},{0xa9,0xcd,0xf6}
 };
 
-/* 8 个预设：第一个（淡蓝）沿用原版写死的色值，不经过 HSL 换算，
-   否则会有肉眼可见的色差 —— 原版 HTML 就是这么处理的。 */
 typedef struct { const wchar_t *name; int h; int fixed; } HUE;
 static const HUE HUES[8]={
   {L"淡蓝",215,1}, {L"天蓝",201,0}, {L"靛蓝",230,0}, {L"紫", 266,0},
   {L"青",  186,0}, {L"绿",  146,0}, {L"粉",  337,0}, {L"橙",  36,0}
 };
-/* 原版淡蓝的固定色值（HSL 换算不出来的一模一样） */
 static const RGB8 FIXED_BLUE[5]={
   {0x4a,0x86,0xd8},{0x5a,0x95,0xe0},{0x6c,0xa4,0xe8},{0x8c,0xb9,0xf0},{0xa9,0xcd,0xf6}
 };
-static const double HUE_S=65.0, HUE_L=57.0;   /* 默认饱和度 / 明度（原版） */
+static const double HUE_S=65.0, HUE_L=57.0;   
 
-static int g_hueIdx=0;                        /* 当前预设索引 */
-static void apply_hue(int idx);               /* 实现见下方 */
+static int g_hueIdx=0;
+static void apply_hue(int idx);
 static void save_hue(void);
 static void load_hue(void);
 
-/* HSL → RGB（h:0..360, s/l:0..100）
-   与原版 HTML 的 hsl2hex 逐位对齐：
-     k = (n + h/30) % 12 ;  f = 255*(l - a*max(-1, min(k-3, min(9-k, 1)))) */
 static RGB8 hsl2rgb(double h,double s,double l){
   s=clampd(s,0,100)/100.0; l=clampd(l,0,100)/100.0;
   double a=s*(l<1-l?l:1-l);
@@ -95,7 +80,6 @@ static RGB8 hsl2rgb(double h,double s,double l){
   return o;
 }
 
-/* 由色相生成 5 层：传进来的 l 是 core 的明度，往外逐层变浅 */
 static void skin_from_hue(int h,double s,double l){
   g_skin[0]=hsl2rgb(h, s,   clampd(l,     12,88));
   g_skin[1]=hsl2rgb(h, s+2, clampd(l+7,   18,92));
@@ -111,7 +95,6 @@ static void apply_hue(int idx){
   else skin_from_hue(HUES[idx].h, HUE_S, HUE_L);
 }
 
-/* 取某个预设的五层色（不改动全局状态，供设置面板画色块用） */
 static void hue_skin(int idx, RGB8 out[5]){
   if(HUES[idx].fixed){ for(int i=0;i<5;i++) out[i]=FIXED_BLUE[i]; return; }
   double s=HUE_S, l=HUE_L, h=HUES[idx].h;
@@ -137,10 +120,10 @@ static double eyeH(void){ return eyeW()*EYE_ASPECT; }
 
 /* ---------------- 状态 ---------------- */
 static double S=6.0, ES=6.0;
-static int    g_win=WINW;                /* 窗口边长（设备像素，正方形），随球大小变化 */
-static double g_D=144.0;                 /* 球体直径（逻辑像素，用户感知的大小），默认 144 = 原版观感 */
-static double g_scale=1.0;               /* DPI 缩放因子（96 DPI = 1.0，150% = 1.5）*/
-static void   set_ball_size(double D);   /* 实现见窗口过程段 */
+static int    g_win=WINW;
+static double g_D=144.0;
+static double g_scale=1.0;
+static void   set_ball_size(double D);
 static void   save_size(void);
 static void   load_size(void);
 static double cx0=WINW/2.0, cy0=WINH/2.0;
@@ -153,9 +136,9 @@ static double combo=0, lastTap=-1e9, rageUntil=-1e9, rage=0;
 static int    angryMood=0;
 static double sharedRot=0;
 
-static int g_x=0, g_y=0;                 /* 窗口左上角（屏幕坐标） */
-static int g_follow=0;                   /* 跟随鼠标（默认关：保留原版「自己到处看」的手感） */
-static int g_topmost=1;                  /* 始终置顶 */
+static int g_x=0, g_y=0;
+static int g_follow=0;
+static int g_topmost=1;
 static POINT g_mouse; static int g_mouseValid=0;
 static HHOOK g_hook=NULL;
 static HWND  g_hwnd=NULL;
@@ -220,8 +203,6 @@ static void step(double now,double dt){
   /* 注视方向 */
   double R = BODY_SIZE/2.0;
   double bodyRpx = R*(1-press)*S;
-  /* 原版行为：按住才盯着你看；没人理它时就自己东张西望。
-     「跟随鼠标」是可选增强，默认关 —— 否则会永久抢占自发环视。 */
   if(holding && g_mouseValid){
     double wx = (double)g_x + cx0, wy = (double)g_y + cy0;
     double dx = (double)g_mouse.x - wx, dy = (double)g_mouse.y - wy;
@@ -229,7 +210,7 @@ static void step(double now,double dt){
     double sat = bodyRpx*0.8; if(sat<1) sat=1;
     double n = d/(d+sat);
     gazeTX = dx/d*n; gazeTY = dy/d*n;
-    gazeNext = now + 1e9;                  /* 按住期间不自动换方向 */
+    gazeNext = now + 1e9;
   }else if(g_follow && g_mouseValid){
     double wx = (double)g_x + cx0, wy = (double)g_y + cy0;
     double dx = (double)g_mouse.x - wx, dy = (double)g_mouse.y - wy;
@@ -240,7 +221,6 @@ static void step(double now,double dt){
     gazeTX = dx/d*n; gazeTY = dy/d*n;
     gazeNext = now + 1e9;
   }else if(now > gazeNext){
-    /* 自己随便看：换方向间隔 1.4~3.4 秒，跟原 HTML 一致 */
     gazeTX = rnd(-1,1)*.85; gazeTY = rnd(-1,1)*.7;
     gazeNext = now + rnd(1400,3400);
   }
@@ -285,7 +265,6 @@ static void draw_shadow(double RX,double RY){
   int y0=(int)floor(sy-r1-2), y1=(int)ceil(sy+r1+2);
   for(int y=y0;y<=y1;y++){
     for(int x=x0;x<=x1;x++){
-      /* 反向施加果冻拉伸（等价于在缩放坐标系里画圆） */
       double ddx=(x+0.5-sx)*(BASE/RX), ddy=(y+0.5-sy)*(BASE/RY);
       double d=hypot(ddx,ddy);
       if(d>r1) continue;
@@ -309,7 +288,6 @@ static void draw_body(double RX,double RY){
       double dx=(x+0.5)-cx0, dy=(y+0.5)-cy0;
       double e=hypot(dx/RX, dy/RY);
       if(e>1.02) continue;
-      /* 近似屏幕空间距离，用于抗锯齿 */
       double gx=dx/(RX*RX), gy=dy/(RY*RY);
       double gn=hypot(gx,gy)/(e>1e-6?e:1e-6);
       double dpix=(e-1.0)/(gn>1e-9?gn:1e-9);
@@ -357,14 +335,11 @@ static void draw_eye(int side,double lid){
   for(int y=y0;y<=y1;y++){
     for(int x=x0;x<=x1;x++){
       double dx=(x+0.5)-ex, dy=(y+0.5)-ey;
-      /* 逆旋转 + 逆缩放 → 局部坐标 */
       double lx=( dx*cs + dy*sn)/ES;
       double ly=(-dx*sn + dy*cs)/ES;
-      /* 胶囊 SDF */
       double pa_y=ly+flat;
       double hh=clampd(pa_y/(2.0*flat),0,1);
       double dcap=hypot(lx, ly-(-flat+2.0*flat*hh))-r;
-      /* 斜切上眼皮：保留直线下方 */
       double dline = -((lx-axL)*nx + (ly-ayL)*ny);
       double d = (dcap>dline)?dcap:dline;
       double cov = clampd(0.5 - d*ES, 0, 1);
@@ -411,21 +386,10 @@ static int get_autorun(void){
   return on;
 }
 
-/* ---------------- 球大小 ----------------
-   球直径 D 是「逻辑像素」——用户感知的大小，不随屏幕 DPI 变。
-   实际渲染按 DPI 放大：设备像素 = D × g_scale。
-   缩放系数 S = D×scale/24（逻辑直径固定 24）→ 半径 R = 12*S = D×scale/2。
-   窗口边长 = 1.7 × D × scale（够画下阴影与拖动余量），以球心为锚点缩放，球不会跳。
-
-   之所以区分逻辑/设备：不声明 DPI 感知时，Windows 会把整个窗口（含系统右键菜单）
-   当成一张位图拉伸到 150%/200%，于是球和系统菜单一起发虚。
-   声明 DPI 感知后系统不再拉伸，菜单由系统按 DPI 原生渲染（清晰），
-   我们自己画的位图则按 scale 用更多设备像素来画 —— 视觉大小不变，但锐利了。 */
 #define D_MIN 60.0
 #define D_MAX 420.0
 static const double PRESET[5]={96.0,144.0,200.0,264.0,340.0};  /* 小/中(默认)/大/特大/巨大 */
 
-/* 窗口边长（设备像素）由球直径（逻辑像素）推导 */
 static int win_px(double D){ int n=(int)round(D*1.7*g_scale); return n<120?120:n; }
 
 static void rebuild_buffer(int n){
@@ -443,7 +407,7 @@ static void set_ball_size(double D){
   double oldCx = g_x + g_win/2.0, oldCy = g_y + g_win/2.0;
   int nw = win_px(D);
   g_D = D; g_win = nw;
-  S = D*g_scale/BODY_SIZE;                /* 24 * S = D * scale（设备像素） */
+  S = D*g_scale/BODY_SIZE;                /* 24 * S = D * scale */
   rebuild_buffer(nw);
   int nx=(int)round(oldCx - nw/2.0), ny=(int)round(oldCy - nw/2.0);
   g_x=nx; g_y=ny;
@@ -487,7 +451,6 @@ static void load_hue(void){
 
 static void popup_menu(int x,int y){
   if(!g_menu){
-    /* 球大小：最小 60 是滚轮能缩到的下限（D_MIN），单独给个入口免得要滚半天 */
     HMENU sub=CreatePopupMenu();
     AppendMenuW(sub,MF_STRING,1017,L"最小 (60 px)");
     AppendMenuW(sub,MF_STRING,1010,L"小 (96 px)");
@@ -499,7 +462,6 @@ static void popup_menu(int x,int y){
     AppendMenuW(sub,MF_STRING,1015,L"放大一档\t滚轮向上");
     AppendMenuW(sub,MF_STRING,1016,L"缩小一档\t滚轮向下");
 
-    /* 颜色：8 个预设直接做成子菜单，当前色打勾 */
     HMENU hue=CreatePopupMenu();
     for(int i=0;i<8;i++) AppendMenuW(hue,MF_STRING,1020+i,HUES[i].name);
 
@@ -528,11 +490,6 @@ static double ball_hit_r(void){
   return BODY_SIZE/2.0*(1.0-press)*S*1.25;
 }
 
-/* ---------------- 拖动：自己接管，绝不用系统 HTCAPTION 那套 ----------------
-   系统默认拖动会进一个 modal 消息循环，期间只派发鼠标消息、WM_TIMER 被挡住
-   → 渲染停摆、画面冻在原地，松手才一次性跳到新位置（就是「瞬移」的元凶）。
-   这里改成：按下时记下「鼠标起点 + 窗口起点」，之后每次鼠标移动直接
-   SetWindowPos 到 起点+位移。WM_TIMER 全程正常跑，拖动时动画照样流畅跟手。 */
 static int g_dragging=0;
 static POINT g_dragMouse0, g_dragWin0;
 static int   g_dragMoved=0;
@@ -540,7 +497,6 @@ static int   g_dragMoved=0;
 static void drag_to(int mx,int my){
   int nx = g_dragWin0.x + (mx - g_dragMouse0.x);
   int ny = g_dragWin0.y + (my - g_dragMouse0.y);
-  /* 别让它彻底跑出工作区，至少留 48px 能看见 */
   RECT wa; SystemParametersInfoW(SPI_GETWORKAREA,0,&wa,0);
   const int keep=48;
   if(nx > wa.right-keep)          nx = wa.right-keep;
@@ -557,10 +513,8 @@ static LRESULT CALLBACK MouseProc(int code,WPARAM w,LPARAM l){
   if(code==HC_ACTION && (w==WM_MOUSEMOVE||w==WM_NCMOUSEMOVE)){
     MSLLHOOKSTRUCT *s=(MSLLHOOKSTRUCT*)l;
     g_mouse=s->pt; g_mouseValid=1;
-    /* 拖动中：全局钩子保证鼠标飞出窗口/飞到别的窗口上也照样跟手 */
     if(g_dragging) drag_to(s->pt.x, s->pt.y);
   }
-  /* 滚轮调大小：鼠标停在球上滚才生效，并吞掉滚轮避免同时滚动下面的窗口 */
   if(code==HC_ACTION && w==WM_MOUSEWHEEL){
     MSLLHOOKSTRUCT *s=(MSLLHOOKSTRUCT*)l;
     g_mouse=s->pt; g_mouseValid=1;
@@ -569,7 +523,7 @@ static LRESULT CALLBACK MouseProc(int code,WPARAM w,LPARAM l){
     if(d<=ball_hit_r()){
       int delta=(short)HIWORD(s->mouseData);
       step_ball_size(delta>0?1:-1);
-      return 1;                           /* 非 0 = 吞掉这条消息 */
+      return 1;
     }
   }
   return CallNextHookEx(g_hook,code,w,l);
@@ -578,11 +532,11 @@ static LRESULT CALLBACK MouseProc(int code,WPARAM w,LPARAM l){
 static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l){
   switch(m){
   case WM_NCHITTEST:{
-    if(g_dragging) return HTCLIENT;          /* 拖动中：整窗都归我，别中途断掉 */
+    if(g_dragging) return HTCLIENT;
     int px=GET_X_LPARAM(l)-g_x, py=GET_Y_LPARAM(l)-g_y;
     double d=hypot((double)px-cx0,(double)py-cy0);
-    if(d<=ball_hit_r()) return HTCLIENT;     /* 球内：可拖动可点击 */
-    return HTTRANSPARENT;                    /* 球外：鼠标穿透到桌面 */
+    if(d<=ball_hit_r()) return HTCLIENT;
+    return HTTRANSPARENT;
   }
   case WM_LBUTTONDOWN:{
     int mx=GET_X_LPARAM(l)+g_x, my=GET_Y_LPARAM(l)+g_y;
@@ -593,8 +547,8 @@ static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l){
     g_dragMouse0.x=mx; g_dragMouse0.y=my;
     g_dragWin0.x=g_x;  g_dragWin0.y=g_y;
     holding=1; onBall=1;
-    popUntil = now_ms() + POP_GROW_MS + POP_HOLD_MS;   /* 一按下去就鼓起来 */
-    SetCapture(h);                                     /* 拖出窗口外也收得到抬手 */
+    popUntil = now_ms() + POP_GROW_MS + POP_HOLD_MS;
+    SetCapture(h);
     return 0;
   }
   case WM_MOUSEMOVE:
@@ -615,11 +569,11 @@ static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l){
       }
     }
     g_dragging=0; holding=0; onBall=0;
-    gazeNext = now + 300;                    /* 松手后停一下，再自己随便看（原版行为） */
+    gazeNext = now + 300;                    /* 松手后停一下，再自己随便看 */
     ReleaseCapture();
     return 0;
   }
-  case WM_CAPTURECHANGED:                    /* 捕获被系统抢走也要收尾，别卡在拖动态 */
+  case WM_CAPTURECHANGED:
     if(g_dragging){ g_dragging=0; holding=0; onBall=0; gazeNext=now_ms()+300; }
     return 0;
   case WM_RBUTTONUP:
@@ -635,7 +589,7 @@ static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l){
     case 1003: set_autorun(!get_autorun()); break;
     case 1010: case 1011: case 1012: case 1013: case 1014:
       set_ball_size(PRESET[LOWORD(w)-1010]); save_size(); break;
-    case 1017:                                   /* 最小 = 滚轮能缩到的下限 */
+    case 1017:
       set_ball_size(D_MIN); save_size(); break;
     case 1015: step_ball_size( 1); break;
     case 1016: step_ball_size(-1); break;
@@ -650,7 +604,6 @@ static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l){
       break;
     }
     case 1005:
-      /* 关于：内容以源码里的这段为准，改这里即可 */
       MessageBoxW(h,
         L"kimi小圆球\n"
         L"\n"
@@ -693,10 +646,6 @@ static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l){
   return DefWindowProcW(h,m,w,l);
 }
 
-/* ---------------- DPI ----------------
-   必须在创建任何窗口之前调用，否则系统已经按 DPI-unaware 建好了虚拟化层。
-   SetProcessDPIAware 是 Vista+ 的系统级感知；Win8.1 的 Per-Monitor 版本
-   需要动态加载，Win7 上没有也不影响 —— 系统级感知足够解决发虚。 */
 static void init_dpi(void){
   typedef BOOL (WINAPI *F1)(void);
   F1 f=(F1)GetProcAddress(GetModuleHandleW(L"user32.dll"),"SetProcessDPIAware");
@@ -718,11 +667,11 @@ int WINAPI WinMain(HINSTANCE hInst,HINSTANCE hPrev,LPSTR cmd,int nShow){
   gazeSeed = rnd(0,99);
   blinkNext = now_ms()+900;
 
-  init_dpi();                            /* 先声明 DPI 感知，再建窗口 */
+  init_dpi();
   load_size();
   load_hue();
   apply_hue(g_hueIdx);
-  g_win = win_px(g_D);                   /* 建窗口前先把尺寸算好 */
+  g_win = win_px(g_D);
   S = g_D*g_scale/BODY_SIZE;
 
   WNDCLASSW wc; memset(&wc,0,sizeof(wc));
@@ -746,14 +695,12 @@ int WINAPI WinMain(HINSTANCE hInst,HINSTANCE hPrev,LPSTR cmd,int nShow){
     NULL,NULL,hInst,NULL);
   if(!g_hwnd) return 0;
 
-  /* 位图缓冲（按设备像素尺寸） */
   HDC scr=GetDC(NULL);
   g_memdc=CreateCompatibleDC(scr);
   ReleaseDC(NULL,scr);
-  set_ball_size(g_D);                    /* 建缓冲 + 定窗口尺寸 */
+  set_ball_size(g_D);
   if(!g_bits) return 0;
 
-  /* 全局鼠标钩子：让小球能看见你的鼠标 */
   g_hook=SetWindowsHookExW(WH_MOUSE_LL,MouseProc,GetModuleHandleA(NULL),0);
 
   SetTimer(g_hwnd,1,16,NULL);
