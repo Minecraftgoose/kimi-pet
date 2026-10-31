@@ -116,7 +116,8 @@ jobs:
           # 幂等：该 tag 的 Release 里已经有 x64 产物就跳过（除非手动勾了 force）
           if [ "$RELEASE" = "true" ] && [ "$FORCE" != "true" ] && [ "$TAG" != "dev" ]; then
             if gh release view "$TAG" >/dev/null 2>&1; then
-              if gh release view "$TAG" --json assets -q '.assets[].name' 2>/dev/null | grep -qx 'KimiPet_x64.exe'; then
+              if gh release view "$TAG" --json assets -q '.assets[].name' 2>/dev/null | grep -qx 'KimiPet_x64.exe' \
+                 && gh release view "$TAG" --json assets -q '.assets[].name' 2>/dev/null | grep -qx 'KimiPet_x86.exe'; then
                 echo "tag $TAG 的 Release 已存在且产物齐全 → 跳过"
                 RELEASE="false"
               fi
@@ -161,10 +162,16 @@ jobs:
           # zip 里只放两个 exe —— 不放 README（那是仓库文档）、不放 ico /
           # 使用说明 / LICENSE，Release 正文与附件保持精简。
           cp "$EXE_DIR/KimiPet_x64.exe" "$EXE_DIR/KimiPet_x86.exe" "dist/${NAME}/"
+          # 同时把两个 exe 单独放一份到 dist/ 根目录：程序自带的「检查更新」
+          # 是按架构直接下载单个 exe 来覆盖自己的，不解压 zip。
+          cp "$EXE_DIR/KimiPet_x64.exe" "$EXE_DIR/KimiPet_x86.exe" "dist/"
           cd dist
           zip -qr "${NAME}.zip" "${NAME}"
           cd "${NAME}"
           sha256sum *.exe > ../SHA256SUMS.txt
+          cd ..
+          echo "--- 独立 exe（供自检更新下载） ---"
+          ls -la *.exe
           cd ..
           echo "zip=${NAME}.zip" >> "$GITHUB_OUTPUT"
           echo "--- zip 内容 ---"
@@ -180,6 +187,7 @@ jobs:
           name: KimiPet-${{ steps.meta.outputs.tag }}
           path: |
             dist/*.zip
+            dist/*.exe
             dist/SHA256SUMS.txt
           if-no-files-found: error
 
@@ -196,6 +204,7 @@ jobs:
           prerelease: false
           files: |
             dist/*.zip
+            dist/*.exe
             dist/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

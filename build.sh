@@ -7,7 +7,7 @@ mkdir -p "$OUT"
 echo "产物目录：$OUT"
 
 CFLAGS="-O2 -mwindows"
-LIBS="-lgdi32 -luser32 -ladvapi32 -lwinmm -lshell32 -lm"
+LIBS="-lgdi32 -luser32 -ladvapi32 -lwinmm -lshell32 -lwininet -lm"
 
 WR_CP=""; WR_X64=""; WR_X86=""
 if command -v x86_64-w64-mingw32-windres >/dev/null 2>&1; then

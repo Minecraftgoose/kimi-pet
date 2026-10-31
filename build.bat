@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 set CFLAGS=-O2 -mwindows
-set LIBS=-lgdi32 -luser32 -ladvapi32 -lwinmm -lshell32 -lm
+set LIBS=-lgdi32 -luser32 -ladvapi32 -lwinmm -lshell32 -lwininet -lm
 
 if not exist "..\exe" mkdir "..\exe"
 
