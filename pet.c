@@ -46,7 +46,7 @@ static double clampd(double v,double a,double b){ return v<a?a:(v>b?b:v); }
 static double lerpd(double a,double b,double t){ return a+(b-a)*t; }
 static int clampi(int v,int a,int b){ return v<a?a:(v>b?b:v); }
 
-/* ---------------- 配色  ---------------- */
+/* ---------------- 配色 / 参数 ---------------- */
 typedef struct { unsigned char r,g,b; } RGB8;
 
 static RGB8 g_skin[5]={
