@@ -231,10 +231,10 @@ static const double BODY_SIZE=24.0, BASE_W=5.0, EYE_SCALE=.53, EYE_ASPECT=2.24,
   ANGRY_LID=.43, LID_SLANT=1.1, JITTER=.72, TURN_K=1.8, ROLL=1.6;
 
 #define KP_VERSION_MAJOR 1
-#define KP_VERSION_MINOR 2
+#define KP_VERSION_MINOR 3
 #define KP_VERSION_PATCH 0
-#define KP_VERSION_STR   "v1.2"
-#define KP_VERSION_W    L"v1.2"
+#define KP_VERSION_STR   "v1.3"
+#define KP_VERSION_W    L"v1.3"
 #define KP_REPO_OWNER    "Minecraftgoose"
 #define KP_REPO_NAME     "kimi-pet"
 #define KP_REPO_OWNER_W  L"Minecraftgoose"
@@ -2053,8 +2053,10 @@ static void cfg_load(void){
   int existed=0;
   size_t len=0;
   g_nModSw=0;                              /* 主配置里的模组开关，读之前先清 */
-  mod_dir_init();
-  mods_scan();
+  mod_dir_init();                          /* 保证 mod 目录存在、内置模组写进去 */
+  /* 注意：mods_scan() 必须等配置读完再调 —— 它要靠 [mods] 段决定谁开着。
+     以前放在这里，此时 g_nModSw 刚被清零，结果启动时模组全是关的，
+     只有点一次「重新加载配置」才戴上。 */
   unsigned char *raw=read_file_all(g_cfgPath,&len);
   if(raw){
     if(len>0){
@@ -2084,6 +2086,7 @@ static void cfg_load(void){
     cfg_set(L"general",L"autorun",g_cfg.autorun?L"1":L"0");
   }
   cfg_upgrade();                           /* 老配置缺的键自动补上 */
+  mods_scan();                             /* 配置读完了，这时才知道谁该戴上 */
   g_topmost = g_cfg.topmost?1:0;
   g_follow  = g_cfg.follow ?1:0;
   g_D       = g_cfg.size;
