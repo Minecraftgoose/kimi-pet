@@ -156,30 +156,43 @@ jobs:
         env:
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
+          set -euo pipefail
+
+          # 全程用绝对路径，不 cd —— 之前就是因为来回 cd 数错了层级，
+          # 最后 unzip 跑在工作区根目录，找不到 dist 里的 zip。
+          DIST="$GITHUB_WORKSPACE/dist"
           NAME="KimiPet-${TAG}"
-          mkdir -p "dist/${NAME}"
+
+          rm -rf "$DIST"
+          mkdir -p "$DIST/${NAME}"
+
           # 从 runner.temp 拷回工作区再上传：upload-artifact 的路径不能超出工作区。
           # zip 里只放两个 exe —— 不放 README（那是仓库文档）、不放 ico /
           # 使用说明 / LICENSE，Release 正文与附件保持精简。
-          cp "$EXE_DIR/KimiPet_x64.exe" "$EXE_DIR/KimiPet_x86.exe" "dist/${NAME}/"
+          cp "$EXE_DIR/KimiPet_x64.exe" "$EXE_DIR/KimiPet_x86.exe" "$DIST/${NAME}/"
+
           # 同时把两个 exe 单独放一份到 dist/ 根目录：程序自带的「检查更新」
           # 是按架构直接下载单个 exe 来覆盖自己的，不解压 zip。
-          cp "$EXE_DIR/KimiPet_x64.exe" "$EXE_DIR/KimiPet_x86.exe" "dist/"
-          cd dist
-          zip -qr "${NAME}.zip" "${NAME}"
-          cd "${NAME}"
-          sha256sum *.exe > ../SHA256SUMS.txt
-          cd ..
+          cp "$EXE_DIR/KimiPet_x64.exe" "$EXE_DIR/KimiPet_x86.exe" "$DIST/"
+
+          ZIP="$DIST/${NAME}.zip"
+          rm -f "$ZIP"
+          (cd "$DIST" && zip -qr "${NAME}.zip" "${NAME}")
+
           echo "--- 独立 exe（供自检更新下载） ---"
-          ls -la *.exe
-          cd ..
-          echo "zip=${NAME}.zip" >> "$GITHUB_OUTPUT"
+          ls -la "$DIST"/*.exe
           echo "--- zip 内容 ---"
-          unzip -l "${NAME}.zip"
+          unzip -l "$ZIP"
           echo "--- 确认只有 exe ---"
           for f in README.md KimiPet.ico LICENSE 使用说明.txt; do
-            test ! -e "${NAME}/$f" || { echo "$f 不该出现在产物里"; exit 1; }
+            test ! -e "$DIST/${NAME}/$f" || { echo "$f 不该出现在产物里"; exit 1; }
           done
+
+          (cd "$DIST/${NAME}" && sha256sum *.exe) > "$DIST/SHA256SUMS.txt"
+          echo "--- SHA256 ---"
+          cat "$DIST/SHA256SUMS.txt"
+
+          echo "zip=${NAME}.zip" >> "$GITHUB_OUTPUT"
 
       - name: 上传构建产物（Artifacts）
         uses: actions/upload-artifact@v4
