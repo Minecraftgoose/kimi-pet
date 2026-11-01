@@ -2,7 +2,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-OUT="${OUT:-$(cd .. && pwd)/exe}"
+OUT="${OUT:-$(cd ../.. && pwd)/exe}"
 mkdir -p "$OUT"
 echo "产物目录：$OUT"
 
@@ -32,12 +32,14 @@ echo "  -> 编译图标资源"
 $WR_X64 $WR_CP icon.rc -O coff -o icon_x64.res
 $WR_X86 $WR_CP icon.rc -O coff -o icon_x86.res
 
+SRCS="util.c config.c mod.c render.c update.c main.c"
+
 echo "  -> KimiPet_x64.exe（64 位）"
-x86_64-w64-mingw32-gcc $CFLAGS -o "$OUT/KimiPet_x64.exe" pet.c icon_x64.res $LIBS
+x86_64-w64-mingw32-gcc $CFLAGS -o "$OUT/KimiPet_x64.exe" $SRCS icon_x64.res $LIBS
 
 if command -v i686-w64-mingw32-gcc >/dev/null 2>&1; then
   echo "  -> KimiPet_x86.exe（32 位）"
-  i686-w64-mingw32-gcc $CFLAGS -o "$OUT/KimiPet_x86.exe" pet.c icon_x86.res $LIBS
+  i686-w64-mingw32-gcc $CFLAGS -o "$OUT/KimiPet_x86.exe" $SRCS icon_x86.res $LIBS
 else
   echo "  -> 跳过 32 位（未安装 i686-w64-mingw32-gcc）"
 fi

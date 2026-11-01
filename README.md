@@ -6,6 +6,35 @@
 <div align="center"><img width="137" height="137" alt="图片" src="https://github.com/user-attachments/assets/bdbb817d-cf9e-4abf-8092-ee0d0b525b55" /></div>
 
 
+## 源码结构
+
+按职责拆成了 6 个文件，共用的类型、常量和全局变量都在 `pet.h` 里：
+
+所有 C 源码都在 **`src/`** 目录下，仓库根目录只放文档和 CI：
+
+```
+README.md  LICENSE  AGENTS.md  .gitignore
+.github/workflows/release.yml
+src/
+  ├─ pet.h       公共声明：类型、常量、全局变量 extern、函数原型
+  ├─ util.c      数学工具、UTF-8 ↔ 宽字符转换、文件读写、文本/颜色解析
+  ├─ config.c    KimiPet.ini：解析、写回、缺键自动升级、路径定位
+  ├─ mod.c       锚点、图元（SDF 绘制）、mod\ 目录里的模组
+  ├─ render.c    球体状态、位图缓冲、运动与绘制
+  ├─ update.c    检查更新：查 GitHub Release、下载、写覆盖脚本
+  ├─ main.c      窗口、右键菜单、鼠标钩子、开机自启、入口
+  ├─ icon.rc  KimiPet.ico
+  └─ build.sh  build.bat
+```
+
+编译：
+
+```bash
+cd src && sh build.sh        # 产物写到 ../../exe（仓库外）
+```
+
+改 `build.sh` 里的 `SRCS` 就能加减文件；`build.bat` 同理。
+
 ## 下载
 
 到 [Releases](https://github.com/Minecraftgoose/kimi-pet/releases) 取最新的 `KimiPet-vX.Y.Z.zip`，里面有：
