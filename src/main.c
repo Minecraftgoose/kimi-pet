@@ -273,6 +273,12 @@ static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l){
     UpdateLayeredWindow(h,NULL,&ptDst,&sz,g_memdc,&ptSrc,0,&bf,ULW_ALPHA);
     return 0;
   }
+  case KP_WM_UPDATE:
+    /* 检查更新的工作线程把结果送回来，这里只弹框 / 启动脚本。
+       wParam=1 是看门狗的超时提示，消息体是独立的，不碰工作线程的 ctx。 */
+    if(w) upd_on_timeout(h,(void*)l);
+    else  upd_on_message(h,(void*)l);
+    return 0;
   case WM_DESTROY:
     PostQuitMessage(0);
     return 0;

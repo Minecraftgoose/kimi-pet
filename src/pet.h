@@ -290,6 +290,9 @@ void   buf_blend(int x,int y,unsigned char br,unsigned char bg,unsigned char bb,
 RGB8   grad_color(double t);
 
 /* ---- update.c：检查更新 ---- */
+#define KP_WM_UPDATE 0x8001       /* 工作线程 → 主线程的私有消息 */
+void   upd_on_message(HWND h, void *ctx);
+void   upd_on_timeout(HWND h, void *msg);
 const char *upd_asset_name(void);
 int    parse_ver(const char *t,int *maj,int *min,int *pat);
 int    ver_cmp(int a0,int a1,int a2,int b0,int b1,int b2);
