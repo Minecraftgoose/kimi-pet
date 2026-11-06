@@ -117,7 +117,7 @@ jobs:
       - name: 安装 mingw-w64 交叉编译器
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mingw-w64 zip
+          sudo apt-get install -y --no-install-recommends mingw-w64
           x86_64-w64-mingw32-gcc --version | head -1
           i686-w64-mingw32-gcc  --version | head -1
 
@@ -136,48 +136,29 @@ jobs:
           test -s "$EXE_DIR/KimiPet_x64.exe" || { echo "64 位产物为空"; exit 1; }
           test -s "$EXE_DIR/KimiPet_x86.exe" || { echo "32 位产物为空"; exit 1; }
 
-      - name: 打包
-        id: pkg
-        env:
-          TAG: ${{ steps.meta.outputs.tag }}
+      - name: 整理产物
         run: |
           set -euo pipefail
 
+          # 两个 exe 直接平铺，不再套一层 zip —— Release 区域里点开就是 exe。
+          # 程序自带的「检查更新」也是按架构直接下载单个 exe 覆盖自己的。
           DIST="$GITHUB_WORKSPACE/dist"
-          NAME="KimiPet-${TAG}"
-
           rm -rf "$DIST"
-          mkdir -p "$DIST/${NAME}"
-
-          cp "$EXE_DIR/KimiPet_x64.exe" "$EXE_DIR/KimiPet_x86.exe" "$DIST/${NAME}/"
-
+          mkdir -p "$DIST"
           cp "$EXE_DIR/KimiPet_x64.exe" "$EXE_DIR/KimiPet_x86.exe" "$DIST/"
 
-          ZIP="$DIST/${NAME}.zip"
-          rm -f "$ZIP"
-          (cd "$DIST" && zip -qr "${NAME}.zip" "${NAME}")
-
-          echo "--- 独立 exe（供自检更新下载） ---"
+          echo "--- Release 附件（平铺） ---"
           ls -la "$DIST"/*.exe
-          echo "--- zip 内容 ---"
-          unzip -l "$ZIP"
-          echo "--- 确认只有 exe ---"
-          for f in README.md KimiPet.ico LICENSE 使用说明.txt; do
-            test ! -e "$DIST/${NAME}/$f" || { echo "$f 不该出现在产物里"; exit 1; }
-          done
 
-          (cd "$DIST/${NAME}" && sha256sum *.exe) > "$DIST/SHA256SUMS.txt"
+          (cd "$DIST" && sha256sum *.exe) > "$DIST/SHA256SUMS.txt"
           echo "--- SHA256 ---"
           cat "$DIST/SHA256SUMS.txt"
-
-          echo "zip=${NAME}.zip" >> "$GITHUB_OUTPUT"
 
       - name: 上传构建产物（Artifacts）
         uses: actions/upload-artifact@v4
         with:
           name: KimiPet-${{ steps.meta.outputs.tag }}
           path: |
-            dist/*.zip
             dist/*.exe
             dist/SHA256SUMS.txt
           if-no-files-found: error
@@ -191,7 +172,6 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            dist/*.zip
             dist/*.exe
             dist/SHA256SUMS.txt
         env:

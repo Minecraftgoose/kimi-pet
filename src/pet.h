@@ -48,9 +48,9 @@ extern double g_simNow;
 /* ---------------- 版本 / 仓库（自动更新用） ---------------- */
 #define KP_VERSION_MAJOR 1
 #define KP_VERSION_MINOR 3
-#define KP_VERSION_PATCH 1
-#define KP_VERSION_STR   "v1.3.1"
-#define KP_VERSION_W    L"v1.3.1"
+#define KP_VERSION_PATCH 2
+#define KP_VERSION_STR   "v1.3.2"
+#define KP_VERSION_W    L"v1.3.2"
 #define KP_REPO_OWNER    "Minecraftgoose"
 #define KP_REPO_NAME     "kimi-pet"
 #define KP_REPO_OWNER_W  L"Minecraftgoose"
@@ -92,14 +92,14 @@ enum { A_BODY=0, A_EYE_L, A_EYE_R, A_EYES, A_MOUTH, A_HEAD_TOP,
        A_EAR_L, A_EAR_R, A_FOOT_L, A_FOOT_R, ANCH_N };
 
 /* ---------------- 图元 ---------------- */
-enum { SH_CIRCLE=0, SH_RING, SH_ELLIPSE, SH_RECT, SH_LINE, SH_ARC };
+enum { SH_CIRCLE=0, SH_RING, SH_ELLIPSE, SH_RECT, SH_LINE, SH_ARC, SH_TRIANGLE };
 
 typedef struct {
   int    mod;
   int    layer;      /* 0 = 画在球体之前（耳朵/脚这类该被挡住的），1 = 画在眼睛之后 */
   int    kind;
   /* 语义字段：解析时先存这些，落盘前按 kind 组装成 p[]，避免 w/h/corner 抢槽位 */
-  double rad, thick, sw, sh, rx, ry, a0deg, a1deg, corner;
+  double rad, thick, sw, sh, rx, ry, a0deg, a1deg, corner, lean;
   int    hasThick;
   double p[6];       /* 组装后的最终参数，各 shape 各用各的，互不干扰 */
   RGB8   col;

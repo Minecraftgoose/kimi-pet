@@ -544,6 +544,7 @@ void cfg_load(void){
 /* 菜单里「重新加载配置」 */
 void reload_cfg(void){
   size_t len=0;
+  mod_dir_init();                          /* 顺带补齐这一版新增的内置模组 */
   unsigned char *raw=read_file_all(g_cfgPath,&len);
   g_nModSw=0;
   if(raw){

@@ -37,12 +37,14 @@ cd src && sh build.sh        # 产物写到 ../../exe（仓库外）
 
 ## 下载
 
-到 [Releases](https://github.com/Minecraftgoose/kimi-pet/releases) 取最新的 `KimiPet-vX.Y.Z.zip`，里面有：
+到 [Releases](https://github.com/Minecraftgoose/kimi-pet/releases) 直接取对应架构的 exe —— 附件是平铺的，不打包 zip：
 
 | 文件 | 说明 |
 |---|---|
 | `KimiPet_x64.exe` | 64 位系统用这个 |
 | `KimiPet_x86.exe` | 32 位系统用这个 |
+
+另有 `SHA256SUMS.txt` 可校验。
 
 
 ## 怎么玩
@@ -75,7 +77,7 @@ cd src && sh build.sh        # 产物写到 ../../exe（仓库外）
 - GitHub 返回 **403 / 429**（未登录时每小时 60 次 API 限流）会直接给提示，不会去解析错误页
 - 没网、代理拦截、下载到的不是 exe，都只提示、不改动旧文件
 
-发版时 Release 必须带**独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe` 附件**（不只是 zip），否则检查更新会提示找不到安装包。
+发版时 Release 附件里必须有**独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`**（程序按架构名直接找这两个文件下载），否则检查更新会提示找不到安装包。
 
 ### 调大小
 
@@ -133,7 +135,9 @@ color        = 淡蓝   ; 当前配色，名字要对得上 [colors] 里的某�
 
 ## 模组
 
-exe 同级会有一个 `mod\` 文件夹，里面一个 `.ini` 就是一个模组。首次运行会自动生成两个示例（默认全关）：`兔耳.ini`、`锚点调试.ini`。
+exe 同级会有一个 `mod\` 文件夹，里面一个 `.ini` 就是一个模组。首次运行会自动生成三个示例（默认全关）：`兔耳.ini`、`猫耳（白）.ini`、`锚点调试.ini`。
+
+升级到新版时，新增的内置模组会**自动补进已有的 `mod\` 文件夹**，已经存在的文件一律不覆盖 —— 你改过参数的、自己加的模组都原样保留。
 
 想戴上，两种方式都行：
 
@@ -215,6 +219,7 @@ color = #262626
 | `rect` | `w` `h` `corner` | 矩形，`corner` 是圆角 |
 | `line` | `thick` + 终点 | 圆头线段（鼻梁、胡须、腿） |
 | `arc` | `r` `thick` `a0` `a1` | 圆弧，角度用度，0 = 正右方，顺时针（因为 y 向下） |
+| `triangle` / `tri` | `w` `h` `lean` `corner` | 等腰三角形，尖朝上。`w` 底宽、`h` 高、`lean` 让尖端左右偏、`corner` 圆角（做猫耳用） |
 
 ### 每个图元都能调
 
@@ -229,7 +234,7 @@ color = #262626
 | `alpha` | 0~1 透明度 |
 | `layer` | `back` = 画在球体之前（耳朵、脚这类该被挡住的）；默认 `front` = 盖在眼睛之后 |
 
-`w` 在 `rect` 里是宽度，在其他图元里当线宽用；想明确点就写 `thick`。
+`w` 在 `rect` / `triangle` 里是宽度，在其他图元里当线宽用；想明确点就写 `thick`。`triangle` 的 `lean` 是顶点相对底边中点的水平偏移，`corner` 把尖角磨圆，配合 `rot` 能做出向外撇的耳朵。
 
 ## 自己编译
 

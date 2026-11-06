@@ -91,6 +91,31 @@ static double sdf_ellipse(double x,double y,const double*p){
   double k1=hypot(x/(rx*rx),y/(ry*ry));
   return (k0-1.0)*k0/(k1>1e-9?k1:1e-9);
 }
+/* 等腰三角形：p0=半宽 w/2, p1=半高 h/2, p2=顶点水平偏移 lean, p3=圆角。
+   顶点 (lean,-h/2)，底角 (±w/2, +h/2)。用 iq 的 sdTriangle，
+   内部为负、外部为正；再减去圆角半径，尖角就变圆润了。 */
+static double sdf_triangle(double x,double y,const double*p){
+  double w=p[0], hh=p[1], lean=p[2];
+  if(w<1e-6||hh<1e-6) return 1e9;
+  const double ax=lean, ay=-hh, bx=-w, by=hh, cx=w, cy=hh;
+  const double e0x=bx-ax, e0y=by-ay;
+  const double e1x=cx-bx, e1y=cy-by;
+  const double e2x=ax-cx, e2y=ay-cy;
+  const double v0x=x-ax, v0y=y-ay;
+  const double v1x=x-bx, v1y=y-by;
+  const double v2x=x-cx, v2y=y-cy;
+  double t0=clampd((v0x*e0x+v0y*e0y)/(e0x*e0x+e0y*e0y),0,1);
+  double t1=clampd((v1x*e1x+v1y*e1y)/(e1x*e1x+e1y*e1y),0,1);
+  double t2=clampd((v2x*e2x+v2y*e2y)/(e2x*e2x+e2y*e2y),0,1);
+  double q0x=v0x-e0x*t0, q0y=v0y-e0y*t0;
+  double q1x=v1x-e1x*t1, q1y=v1y-e1y*t1;
+  double q2x=v2x-e2x*t2, q2y=v2y-e2y*t2;
+  double sg=(e0x*e2y-e0y*e2x)>=0?1.0:-1.0;
+  double d=fmin(fmin(q0x*q0x+q0y*q0y, q1x*q1x+q1y*q1y), q2x*q2x+q2y*q2y);
+  double c=fmin(fmin(sg*(v0x*e0y-v0y*e0x), sg*(v1x*e1y-v1y*e1x)),
+                sg*(v2x*e2y-v2y*e2x));
+  return -sqrt(d)*(c>=0?1.0:-1.0) - p[3];
+}
 static double sdf_rect(double x,double y,const double*p){
   double hw=p[0]*0.5-p[2], hh=p[1]*0.5-p[2];
   if(hw<0) hw=0; if(hh<0) hh=0;
@@ -174,6 +199,9 @@ static void part_build(ModPart *P){
   case SH_RECT:    P->p[0]=P->sw;  P->p[1]=P->sh;   P->p[2]=P->corner; break;
   case SH_ARC:     P->p[0]=P->rad; P->p[1]=P->thick;
                    P->p[2]=P->a0deg*M_PI/180.0; P->p[3]=P->a1deg*M_PI/180.0; break;
+  /* triangle：等腰，顶点 (lean,-h/2)，底边 y=+h/2 宽 w */
+  case SH_TRIANGLE:P->p[0]=P->sw*0.5; P->p[1]=P->sh*0.5;
+                   P->p[2]=P->lean; P->p[3]=fmax(P->corner,0.0); break;
   default:         P->p[4]=P->thick; break;      /* SH_LINE */
   }
 }
@@ -209,6 +237,7 @@ static int find_shape(const char *s){
   if(cieq(s,"rect")||cieq(s,"box"))        return SH_RECT;
   if(cieq(s,"line")||cieq(s,"capsule"))    return SH_LINE;
   if(cieq(s,"arc"))                        return SH_ARC;
+  if(cieq(s,"triangle")||cieq(s,"tri"))    return SH_TRIANGLE;
   return -1;
 }
 
@@ -314,6 +343,7 @@ int mod_parse_text(const char *text,const wchar_t *fallbackName){
     else if(cieq(key,"a0")||cieq(key,"from"))     P.a0deg=atof(val);
     else if(cieq(key,"a1")||cieq(key,"to_angle")||cieq(key,"angle")) P.a1deg=atof(val);
     else if(cieq(key,"corner")||cieq(key,"round"))P.corner=atof(val);
+    else if(cieq(key,"lean")||cieq(key,"tipx")) P.lean=atof(val);
   }
   if(hasPart && g_nParts<MAX_PARTS){
     part_build(&P);
@@ -379,6 +409,86 @@ const BuiltinMod BUILTIN_MODS[] = {
 "rot = 13\n"
 "dy = -4.0\n"
 "color = #f7b8c8\n"
+"layer = back\n"
+},
+{ "猫耳（白）.ini",
+"[mod]\n"
+"name = 猫耳（白）\n"
+"enabled = 0\n"
+"\n"
+"; 白色猫耳：比兔耳略宽一点、短一点的尖三角\n"
+"; 浅灰描边 + 白面 + 粉内耳；layer = back 让耳根被球挡住\n"
+"[part]\n"
+"at = ear_l\n"
+"shape = triangle\n"
+"w = 5.8\n"
+"h = 8.8\n"
+"corner = .45\n"
+"lean = -1.0\n"
+"rot = -16\n"
+"dy = -4.2\n"
+"color = #cfd6e2\n"
+"layer = back\n"
+"\n"
+"[part]\n"
+"at = ear_r\n"
+"shape = triangle\n"
+"w = 5.8\n"
+"h = 8.8\n"
+"corner = .45\n"
+"lean = 1.0\n"
+"rot = 16\n"
+"dy = -4.2\n"
+"color = #cfd6e2\n"
+"layer = back\n"
+"\n"
+"[part]\n"
+"at = ear_l\n"
+"shape = triangle\n"
+"w = 5.0\n"
+"h = 8.0\n"
+"corner = .4\n"
+"lean = -.9\n"
+"rot = -16\n"
+"dy = -4.2\n"
+"color = #ffffff\n"
+"layer = back\n"
+"\n"
+"[part]\n"
+"at = ear_r\n"
+"shape = triangle\n"
+"w = 5.0\n"
+"h = 8.0\n"
+"corner = .4\n"
+"lean = .9\n"
+"rot = 16\n"
+"dy = -4.2\n"
+"color = #ffffff\n"
+"layer = back\n"
+"\n"
+"; 内耳\n"
+"[part]\n"
+"at = ear_l\n"
+"shape = triangle\n"
+"w = 2.4\n"
+"h = 4.0\n"
+"corner = .25\n"
+"lean = -.4\n"
+"rot = -16\n"
+"dy = -4.0\n"
+"color = #f3aec2\n"
+"layer = back\n"
+"\n"
+"[part]\n"
+"at = ear_r\n"
+"shape = triangle\n"
+"w = 2.4\n"
+"h = 4.0\n"
+"corner = .25\n"
+"lean = .4\n"
+"rot = 16\n"
+"dy = -4.0\n"
+"color = #f3aec2\n"
 "layer = back\n"
 },
 { "锚点调试.ini",
@@ -451,6 +561,8 @@ static double part_bound(ModPart *P,double *pp){
   case SH_RECT:    return hypot(P->p[0],P->p[1])*0.5+1.0;
   case SH_ARC:     return P->p[0]+P->p[1]*0.5+1.0;
   case SH_LINE:    return hypot(pp[2],pp[3])+P->p[4]*0.5+1.0;
+  case SH_TRIANGLE:return fmax(hypot(P->p[2],P->p[1]),hypot(P->p[0],P->p[1]))
+                          +P->p[3]+1.0;
   }
   return 4.0;
 }
@@ -493,6 +605,7 @@ void draw_mods(int layer){
     case SH_ELLIPSE: f=sdf_ellipse; break;
     case SH_RECT:    f=sdf_rect;    break;
     case SH_ARC:     f=sdf_arc;     break;
+    case SH_TRIANGLE:f=sdf_triangle;break;
     default:         f=sdf_line;    break;
     }
     draw_shape(ox,oy,rot,scl,bound,P->col,P->alpha,f,pp);
@@ -510,7 +623,12 @@ void mod_dir_init(void){
   if(exe_dir(dir,1024)){
     _snwprintf(g_modDir,1024,L"%lsmod",dir);
     DWORD a=GetFileAttributesW(g_modDir);
-    if(a!=INVALID_FILE_ATTRIBUTES && (a&FILE_ATTRIBUTE_DIRECTORY)) return;
+    if(a!=INVALID_FILE_ATTRIBUTES && (a&FILE_ATTRIBUTE_DIRECTORY)){
+      /* 老用户升级：mod 目录早就存在。以前这里直接 return，导致新版新增的
+         内置模组永远不出现。现在照样补齐，mods_write_builtin 只补不覆盖。 */
+      mods_write_builtin();
+      return;
+    }
     if(CreateDirectoryW(g_modDir,NULL)){ mods_write_builtin(); return; }
   }
   wchar_t app[1024];
@@ -518,17 +636,23 @@ void mod_dir_init(void){
     _snwprintf(g_modDir,1024,L"%ls\\KimiPet",app);
     CreateDirectoryW(g_modDir,NULL);
     _snwprintf(g_modDir,1024,L"%ls\\KimiPet\\mod",app);
-    if(CreateDirectoryW(g_modDir,NULL)) mods_write_builtin();
+    CreateDirectoryW(g_modDir,NULL);
+    /* exe 目录没写权限时走这里；不管目录是新建还是早就存在都要补齐 */
+    mods_write_builtin();
     return;
   }
   wcscpy(g_modDir,L"mod");
 }
 
+/* 只补「缺了」的内置模组文件，绝不覆盖已存在的 —— 用户可能改过参数、
+   也可能故意删了某个文件后不想要它回来（那种情况把 enabled 改成 0 即可，
+   但已经从 BUILTIN_MODS 移除的旧模组不会被重新生成）。 */
 void mods_write_builtin(void){
   for(int i=0;i<N_BUILTIN_MODS;i++){
     wchar_t path[1024], fname[128];
     if(u8_to_w(BUILTIN_MODS[i].file,fname,128)<=0) continue;
     _snwprintf(path,1024,L"%ls\\%ls",g_modDir,fname);
+    if(GetFileAttributesW(path)!=INVALID_FILE_ATTRIBUTES) continue;
     write_file_all(path,(const unsigned char*)BUILTIN_MODS[i].text,
                    strlen(BUILTIN_MODS[i].text));
   }
