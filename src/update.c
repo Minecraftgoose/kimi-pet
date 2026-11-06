@@ -95,8 +95,6 @@ int find_asset_url(const char *json,const char *want,char *out,int outn){
 #define UPD_TIMEOUT_MS   8000
 #define UPD_HARD_MS      20000       /* 看门狗硬超时 */
 #define UPD_MAX_BODY     (8*1024*1024)
-#define UPD_ASK_WAIT_MS  60000
-#define UPD_ACK_WAIT_MS  30000
 
 /* GitHub API 强制要求 User-Agent，不带会直接 403 */
 static const wchar_t *UPD_GH_HEADERS =
@@ -231,18 +229,77 @@ static int http_get_ex(const char *url,const wchar_t *headers,
   return 1;
 }
 
-/* 下载到文件；校验 PE 头，防止把 HTML 错误页当 exe 覆盖自己 */
-static int http_download(const char *url,const wchar_t *dst,DWORD *status,
-                         volatile PVOID *reqSlot){
-  char *data=NULL; int len=0;
-  int ok=http_get_ex(url,NULL,&data,&len,status,reqSlot);
-  if(!ok||!data){ free(data); return 0; }
-  if(len<1024 || (unsigned char)data[0]!='M' || (unsigned char)data[1]!='Z'){
-    free(data); return 0;
+/* --------------------------------------------------------------------------
+   下载新 exe：交给系统自带的 curl.exe，不再用 WinINet。
+
+   为什么：Release 的 asset 直链在 github.com/.../releases/download/，会 302
+   跳到 objects.githubusercontent.com；这条链路和 api.github.com 完全不是一回事，
+   国内经常被拦/挂起，而 WinINet 的超时选项在部分环境根本不生效（实测能挂 30 秒）。
+   curl 自带 -L 跟随重定向、--connect-timeout / --max-time 硬超时、--retry 重试，
+   并且会读系统/环境代理设置，比 WinINet 可靠得多。老系统没有 curl 时退回
+   PowerShell 的 WebClient（Win7 起自带，也会自动跟随重定向）。
+
+   下完必须校验是 PE（MZ）且足够大 —— 防止把 403/404 错误页当 exe 覆盖自己。
+   -------------------------------------------------------------------------- */
+static int curl_download(const char *url,const wchar_t *dst){
+  DeleteFileW(dst);                       /* 上次失败的残file */
+  wchar_t wurl[2048];
+  if(MultiByteToWideChar(CP_UTF8,0,url,-1,wurl,2048)<=0) return 0;
+
+  /* 可选镜像前缀：国内连不上 github.com 时，用户可设环境变量 KIMIPET_MIRROR，
+     例如 https://ghproxy.net/ —— 程序会把它拼在 asset 直链前面。留空=直连。 */
+  wchar_t mirror[512]=L"";
+  GetEnvironmentVariableW(L"KIMIPET_MIRROR",mirror,512);
+  wchar_t full[2048];
+  if(mirror[0]) _snwprintf(full,2048,L"%ls%ls",mirror,wurl);
+  else          wcscpy(full,wurl);
+
+  wchar_t cmd[4096];
+  STARTUPINFOW si; memset(&si,0,sizeof si); si.cb=sizeof si;
+  PROCESS_INFORMATION pi; memset(&pi,0,sizeof pi);
+
+  _snwprintf(cmd,4096,
+    L"curl.exe -L -f -sS --retry 2 --connect-timeout 15 --max-time 180 "
+    L"-o \"%ls\" \"%ls\"", dst, full);
+
+  BOOL started=CreateProcessW(NULL,cmd,NULL,NULL,FALSE,
+                              CREATE_NO_WINDOW,NULL,NULL,&si,&pi);
+  if(!started){
+    /* 没有 curl.exe：PowerShell WebClient 兜底 */
+    _snwprintf(cmd,4096,
+      L"powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "
+      L"\"$ProgressPreference='SilentlyContinue'; "
+      L"(New-Object System.Net.WebClient).DownloadFile('%ls','%ls')\"",
+      full,dst);
+    started=CreateProcessW(NULL,cmd,NULL,NULL,FALSE,
+                           CREATE_NO_WINDOW,NULL,NULL,&si,&pi);
+    if(!started){
+      DeleteFileW(dst);
+      return 0;
+    }
   }
-  int w=write_file_all(dst,(const unsigned char*)data,(size_t)len);
-  free(data);
-  return w;
+  /* curl 自己有 --max-time，这里再兜一层，防止极端情况下永不返回 */
+  DWORD wr=WaitForSingleObject(pi.hProcess,200000);
+  DWORD code=1;
+  if(wr==WAIT_OBJECT_0) GetExitCodeProcess(pi.hProcess,&code);
+  else TerminateProcess(pi.hProcess,1);
+  CloseHandle(pi.hThread);
+  CloseHandle(pi.hProcess);
+  if(code!=0){ DeleteFileW(dst); return 0; }
+
+  /* 校验 PE 头 + 合理体积（x86/x64 都是 400KB 量级，64KB 下限很宽松） */
+  HANDLE hf=CreateFileW(dst,GENERIC_READ,FILE_SHARE_READ,NULL,
+                        OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+  if(hf==INVALID_HANDLE_VALUE){ DeleteFileW(dst); return 0; }
+  LARGE_INTEGER sz; sz.QuadPart=0;
+  GetFileSizeEx(hf,&sz);
+  unsigned char mz[2]={0}; DWORD got=0;
+  ReadFile(hf,mz,2,&got,NULL);
+  CloseHandle(hf);
+  if(sz.QuadPart<65536 || got!=2 || mz[0]!='M' || mz[1]!='Z'){
+    DeleteFileW(dst); return 0;
+  }
+  return 1;
 }
 
 /* 写一个 bat：等本进程结束 → 用新 exe 覆盖 → 启动 → 自删 */
@@ -325,10 +382,13 @@ static void upd_cleanup(UPD_CTX *c){
   InterlockedExchange(&g_updBusy,0);
 }
 
-static void upd_notify(UPD_CTX *c,DWORD waitMs){
+/* 注意：这里必须等到主线程真的处理完（用户把对话框点掉）才能释放 ctx。
+   以前设了 30 秒上限，超时就 free，可主线程的 MessageBox 可能还开着，
+   之后 SetEvent(c->ev) 就是 use-after-free。弹框是用户主动触发的，等他点掉是合理的。 */
+static void upd_notify(UPD_CTX *c){
   if(READ(&c->timedOut)){ upd_cleanup(c); return; }   /* 看门狗已经提示过了 */
   PostMessageW(c->h,KP_WM_UPDATE,0,(LPARAM)c);
-  WaitForSingleObject(c->ev,waitMs);
+  WaitForSingleObject(c->ev,INFINITE);
   upd_cleanup(c);
 }
 
@@ -387,7 +447,7 @@ static DWORD WINAPI upd_thread(LPVOID arg){
     }
     upd_override_timeout(c);
     free(json);
-    upd_notify(c,UPD_ACK_WAIT_MS);
+    upd_notify(c);
     return 0;
   }
 
@@ -401,26 +461,26 @@ static DWORD WINAPI upd_thread(LPVOID arg){
     _snwprintf(c->msg,600,
       L"没能读到最新版本号（GitHub 返回的内容看不懂）。\n"
       L"稍后再试，或到 Releases 页面手动查看。");
-    upd_notify(c,UPD_ACK_WAIT_MS); return 0;
+    upd_notify(c); return 0;
   }
   int nmaj=0,nmin=0,npat=0;
   if(!parse_ver(tag,&nmaj,&nmin,&npat)){
     c->stage=UPD_ERR_JSON;
     _snwprintf(c->msg,600,L"最新版本号 %hs 看不懂，跳过更新。",tag);
-    upd_notify(c,UPD_ACK_WAIT_MS); return 0;
+    upd_notify(c); return 0;
   }
   if(ver_cmp(nmaj,nmin,npat,KP_VERSION_MAJOR,KP_VERSION_MINOR,KP_VERSION_PATCH)<=0){
     c->stage=UPD_LATEST;
     _snwprintf(c->msg,600,L"已经是最新版了。\n\n当前版本：%hs\n最新版本：%hs",
                KP_VERSION_STR,tag);
-    upd_notify(c,UPD_ACK_WAIT_MS); return 0;
+    upd_notify(c); return 0;
   }
   if(!haveUrl){
     c->stage=UPD_ERR_NOASSET;
     _snwprintf(c->msg,600,
       L"找到新版本 %hs，但 Release 里没有本程序对应的安装包"
       L"（可能是发布时漏传了独立 exe）。\n\n请到 Releases 页面手动下载。",tag);
-    upd_notify(c,UPD_ACK_WAIT_MS); return 0;
+    upd_notify(c); return 0;
   }
 
   /* 有新版本：问一句再动手（确认框必须主线程弹） */
@@ -428,15 +488,14 @@ static DWORD WINAPI upd_thread(LPVOID arg){
   c->stage=UPD_ASK;
   _snwprintf(c->msg,600,
     L"发现新版本 %hs（当前 %hs）。\n\n要现在更新吗？\n"
-    L"更新会自动下载、覆盖旧文件并重启本程序。\n"
-    L"你的配置文件和模组都不会动。",
+    L"会下载新 exe、覆盖旧文件并重启本程序；下载可能需要几十秒，"
+    L"期间球照常动。\n你的配置文件和模组都不会动。",
     tag,KP_VERSION_STR);
   if(READ(&c->timedOut)){ upd_cleanup(c); return 0; }
   PostMessageW(c->h,KP_WM_UPDATE,0,(LPARAM)c);
-  /* netActive 已为 0，用户盯着对话框看多久都不会被看门狗打断 */
-  if(WaitForSingleObject(c->ev,UPD_ASK_WAIT_MS)!=WAIT_OBJECT_0 || c->answer!=IDYES){
-    upd_cleanup(c); return 0;
-  }
+  /* netActive 已为 0，看门狗不会打扰；确认框开多久都等，不能中途 free ctx */
+  WaitForSingleObject(c->ev,INFINITE);
+  if(c->answer!=IDYES){ upd_cleanup(c); return 0; }
 
   /* 下载也在工作线程，UI 全程不阻塞 */
   wchar_t tmpdir[1024],self[MAX_PATH];
@@ -444,34 +503,36 @@ static DWORD WINAPI upd_thread(LPVOID arg){
   if(!GetModuleFileNameW(NULL,self,MAX_PATH)){
     c->stage=UPD_ERR_BAT;
     _snwprintf(c->msg,600,L"取不到本程序的路径，没法更新。");
-    upd_notify(c,UPD_ACK_WAIT_MS); return 0;
+    upd_notify(c); return 0;
   }
   _snwprintf(c->src,1200,L"%lsKimiPet_update_%lu.exe",tmpdir,GetCurrentProcessId());
   _snwprintf(c->bat,1200,L"%lsKimiPet_update_%lu.bat",tmpdir,GetCurrentProcessId());
   wcscpy(c->dst,self);
 
-  DWORD dstSt=0;
-  net_begin(c);
-  int dl=http_download(c->url,c->src,&dstSt,&c->hReq);
-  net_end(c);
+  /* 下载交给外部 curl（自带超时与重定向），不套 WinINet 的看门狗计时 ——
+     那个 20 秒硬超时是给 API 小请求用的，下载几百 KB 可能更久。 */
+  int dl=curl_download(c->url,c->src);
   if(!dl){
     c->stage=UPD_ERR_DOWNLOAD;
     _snwprintf(c->msg,600,
-      L"下载新版本失败。\n可能是网络中断、被杀软拦截，或下载到的不是 exe。\n"
-      L"旧文件没有被改动。");
+      L"下载新版本失败。\n\n"
+      L"GitHub 的下载域名（github.com → objects.githubusercontent.com）"
+      L"和检查更新用的 API 不是同一条链路，国内网络经常只通 API 那一条。\n"
+      L"可以重试；仍不行就到 Releases 页面手动下载，或用随附的 "
+      L"KimiPetUpdater.bat 手动升级。\n\n"
+      L"旧文件没有被改动，本程序也不会退出。");
     DeleteFileW(c->src);
-    upd_override_timeout(c);
-    upd_notify(c,UPD_ACK_WAIT_MS); return 0;
+    upd_notify(c); return 0;
   }
   if(!write_updater_bat(c->bat,c->src,c->dst)){
     c->stage=UPD_ERR_BAT;
     _snwprintf(c->msg,600,L"没能写出更新脚本，取消更新。旧文件没有被改动。");
     DeleteFileW(c->src);
-    upd_notify(c,UPD_ACK_WAIT_MS); return 0;
+    upd_notify(c); return 0;
   }
 
   c->stage=UPD_DO_REPLACE;
-  upd_notify(c,UPD_ACK_WAIT_MS);
+  upd_notify(c);
   return 0;
 }
 

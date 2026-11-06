@@ -147,8 +147,12 @@ jobs:
           mkdir -p "$DIST"
           cp "$EXE_DIR/KimiPet_x64.exe" "$EXE_DIR/KimiPet_x86.exe" "$DIST/"
 
+          # 独立手动更新器：给「能检测到新版本但下载不下来」的老版本用户
+          # 手动跑一次用；也作为普通用户的备用升级手段。
+          cp "$GITHUB_WORKSPACE/src/KimiPetUpdater.bat" "$DIST/"
+
           echo "--- Release 附件（平铺） ---"
-          ls -la "$DIST"/*.exe
+          ls -la "$DIST"/*.exe "$DIST"/*.bat
 
           (cd "$DIST" && sha256sum *.exe) > "$DIST/SHA256SUMS.txt"
           echo "--- SHA256 ---"
@@ -160,6 +164,7 @@ jobs:
           name: KimiPet-${{ steps.meta.outputs.tag }}
           path: |
             dist/*.exe
+            dist/*.bat
             dist/SHA256SUMS.txt
           if-no-files-found: error
 
@@ -173,6 +178,7 @@ jobs:
           prerelease: false
           files: |
             dist/*.exe
+            dist/*.bat
             dist/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -7,28 +7,28 @@ set LIBS=-lgdi32 -luser32 -ladvapi32 -lwinmm -lshell32 -lwininet -lm
 
 if not exist "..\..\exe" mkdir "..\..\exe"
 
-echo   -^> 编译图标资源
+echo   -^> Compiling icon resource
 windres --codepage=65001 icon.rc -O coff -o icon.res
 if errorlevel 1 (
-  echo    （--codepage 不被支持）
+  echo   -^> --codepage not supported, retrying
   windres icon.rc -O coff -o icon.res
   if errorlevel 1 goto :fail
 )
 
-echo   -^> KimiPet_x64.exe ^(64 位^)
+echo   -^> KimiPet_x64.exe ^(64-bit^)
 gcc %CFLAGS% -o ..\..\exe\KimiPet_x64.exe util.c config.c mod.c render.c update.c main.c icon.res %LIBS%
 if errorlevel 1 goto :fail
 
-echo   -^> KimiPet_x86.exe ^(32 位^)
+echo   -^> KimiPet_x86.exe ^(32-bit^)
 gcc %CFLAGS% -o ..\..\exe\KimiPet_x86.exe util.c config.c mod.c render.c update.c main.c icon.res %LIBS%
 if errorlevel 1 goto :fail
 
 del /q icon.res
-echo 完成。
+echo Done.
 if not "%CI%"=="1" pause
 exit /b 0
 
 :fail
-echo 编译失败：确认已安装 MinGW-w64，且 gcc / windres 在 PATH 中。
+echo Build failed. Install MinGW-w64 and make sure gcc / windres are in PATH.
 if not "%CI%"=="1" pause
 exit /b 1

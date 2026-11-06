@@ -44,7 +44,9 @@ cd src && sh build.sh        # 产物写到 ../../exe（仓库外）
 | `KimiPet_x64.exe` | 64 位系统用这个 |
 | `KimiPet_x86.exe` | 32 位系统用这个 |
 
-另有 `SHA256SUMS.txt` 可校验。
+另有 `SHA256SUMS.txt` 可校验，以及 `KimiPetUpdater.bat`（手动更新器，见下方「检查更新」）。
+
+> 仓库里所有 `.bat`（含 `build.bat`）都是**纯 ASCII**、不带 `chcp`：部分 cmd 代码页会把 bat 按 ANSI 读，一个中文或全角标点就可能让整段脚本失效，所以提示一律英文。
 
 
 ## 怎么玩
@@ -76,6 +78,15 @@ cd src && sh build.sh        # 产物写到 ../../exe（仓库外）
 - 网络请求带 8 秒超时，另有 20 秒硬超时兜底，超时就明确提示并放弃，不留挂死线程
 - GitHub 返回 **403 / 429**（未登录时每小时 60 次 API 限流）会直接给提示，不会去解析错误页
 - 没网、代理拦截、下载到的不是 exe，都只提示、不改动旧文件
+
+**下载不是走 WinINet，而是调用系统自带的 `curl.exe`**（没有 curl 时退回 PowerShell）。原因是 GitHub 的下载直链 `github.com/.../releases/download/` 会 302 跳到 `objects.githubusercontent.com`，和检查更新用的 `api.github.com` 完全不是一条链路，国内经常只通后者；WinINet 的超时选项在部分环境还不生效，容易卡在下载上。curl 自带跟随重定向、超时和重试。
+
+下载完会校验 PE 头（`MZ`）和体积，失败只提示、**不改动旧文件也不退出程序**。
+
+**连不上下载域名怎么办**（两选一）：
+
+- 设环境变量 `KIMIPET_MIRROR` 为镜像前缀（例如 `https://ghproxy.net/`），程序会自动拼在直链前面；
+- 或者从 Release 附件下载 **`KimiPetUpdater.bat`**，放到 exe 同目录，退出 KimiPet 后双击运行 —— 它用 `latest/download/` 稳定直链自动下载覆盖并重启。这也是 **v1.3 ~ v1.3.2 老版本用户**的升级办法：那些已经发出去的 exe 内建下载方式改不了，手动跑一次更新器即可跨过去，之后新版就能自己更新了。
 
 发版时 Release 附件里必须有**独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`**（程序按架构名直接找这两个文件下载），否则检查更新会提示找不到安装包。
 

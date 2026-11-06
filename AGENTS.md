@@ -86,6 +86,7 @@ KimiPet_源码与程序
 - **Shell / CI 脚本**：全程用绝对路径，不要来回 `cd`。曾经因多写一层 `cd ..` 导致 `unzip` 跑在工作区根目录找不到文件。确实需要切目录时用 `(cd dir && cmd)` 子 shell。
 - **`memset` 参数错位**：`memset(&P,sizeof(P),0)` 是错的，正确是 `memset(&P,0,sizeof P)`。
 - **`_snwprintf` 宽字符串**必须用 `%ls`，不能用 `%s`。
-- **版本号显示带 `v` 前缀**（`v1.3.2`），比较用数字宏不影响。
+- **所有 `.bat` 必须纯 ASCII**：注释、`echo`、`title`、`REM` 一律英文，不写中文、不用全角标点，也不要 `chcp 65001`（部分 cmd 代码页下 bat 文件按 ANSI 解析，一个中文就可能整段失效）。交付前用「字节 ≥ 128 计数为 0」校验，包括 `KimiPetUpdater.bat` 和 `build.bat`。
+- **版本号显示带 `v` 前缀**（`v1.3.3`），比较用数字宏不影响。
 - **发版必须打 tag** 才会触发 Release；只 push 分支只会构建不发布。
-- **Release 附件平铺、不打包 zip**；必须有独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`，否则程序自带的「检查更新」按架构名找不到可下载的文件。
+- **Release 附件平铺、不打包 zip**；必须有独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`（「检查更新」按架构名找），外加 `KimiPetUpdater.bat` 供老版本用户手动升级。下载走系统 `curl.exe` + PowerShell 兜底，不要用 WinINet 下大文件：`github.com` 的 release 下载链路与 `api.github.com` 不同，国内常被拦且 WinINet 超时不生效。
