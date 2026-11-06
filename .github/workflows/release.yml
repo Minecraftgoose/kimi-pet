@@ -42,8 +42,11 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
-        with:
-          fetch-tags: true
+        # 千万别开 fetch-tags 选项 —— tag push 时 checkout 会用
+        # +<sha>:refs/tags/<tag> 检出当前 tag，再加 --tags（即
+        # refs/tags/*:refs/tags/*）会让两个 refspec 写同一个 destination，
+        # git 直接 fatal: Cannot fetch both ... and refs/tags/<tag>
+        # → 任务 exit 128。需要远端 tag 列表时用下一步的 git ls-remote。
 
       - name: 解析版本号
         id: meta
@@ -58,10 +61,22 @@ jobs:
           set -e
           TAG=""; RELEASE="false"
 
-          latest_tag() { git tag -l --sort=-creatordate | head -1; }
+          # checkout 只拉当前 ref，本地未必有全部 tag，直接查远端。
+          # sort -V 是版本排序：v1.10 必须排在 v1.9 之后，字典序会排反。
+          latest_tag() {
+            git ls-remote --tags origin 2>/dev/null \
+              | sed -n 's#.*refs/tags/##p' \
+              | grep -v '\^' \
+              | sort -V \
+              | tail -1
+          }
 
           if [ "$EVENT" = "workflow_dispatch" ]; then
             TAG="${INPUT_TAG:-$(latest_tag)}"
+            if [ -z "$TAG" ]; then
+              echo "::error::仓库里没有任何 tag，也没指定 tag，没法发布"
+              exit 1
+            fi
             RELEASE="true"
           elif [ "$REF_TYPE" = "tag" ]; then
             TAG="$REF_NAME"
@@ -87,6 +102,17 @@ jobs:
           echo "tag=$TAG"              >> "$GITHUB_OUTPUT"
           echo "should_release=$RELEASE" >> "$GITHUB_OUTPUT"
           echo "==> tag=$TAG  should_release=$RELEASE"
+
+      # 手动补发时 checkout 检的是默认分支 HEAD，可能已经前进了；
+      # 显式切到目标 tag，保证编出来的 exe 和 Release 的 tag 对应。
+      # 单个 refspec + --no-tags，不会和上面的 checkout 撞车。
+      - name: 切到目标 tag 的代码
+        if: steps.meta.outputs.tag != 'dev'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          git fetch --no-tags --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          git checkout --force "refs/tags/$TAG"
 
       - name: 安装 mingw-w64 交叉编译器
         run: |

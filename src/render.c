@@ -41,16 +41,6 @@ const double BODY_SIZE=24.0, BASE_W=5.0, EYE_SCALE=.53, EYE_ASPECT=2.24,
   SHADOW_SCALE=1.0, SHADOW_DX=.10, SHADOW_DY=.14, SHADOW_ALPHA=.30,
   ANGRY_LID=.43, LID_SLANT=1.1, JITTER=.72, TURN_K=1.8, ROLL=1.6;
 
-#define KP_VERSION_MAJOR 1
-#define KP_VERSION_MINOR 3
-#define KP_VERSION_PATCH 0
-#define KP_VERSION_STR   "v1.3"
-#define KP_VERSION_W    L"v1.3"
-#define KP_REPO_OWNER    "Minecraftgoose"
-#define KP_REPO_NAME     "kimi-pet"
-#define KP_REPO_OWNER_W  L"Minecraftgoose"
-#define KP_REPO_NAME_W   L"kimi-pet"
-
 const double RAGE_TAPS=5, RAGE_WINDOW=900.0, RAGE_COOL=2800.0;
 
 /* 睡觉：上下眼睑各合拢这么多，中间剩下 1-2*SLEEP_CLOSE 当作缝 */
