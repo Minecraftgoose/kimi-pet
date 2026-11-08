@@ -238,10 +238,11 @@ static int http_get_ex(const char *url,const wchar_t *headers,
 /* --------------------------------------------------------------------------
    下载兜底：系统自带的 curl.exe（老系统没有就 PowerShell WebClient）。
 
-   只在 WinINet 主路径失败时才走这里。注意不能只写裸 "curl.exe" 让
-   CreateProcess 去搜 PATH：32 位进程的 System32 会被 WOW64 重定向到
-   SysWOW64，而 Windows 只随系统带了 64 位 curl.exe，x86 版会找不到。
-   所以先试系统目录全路径，再退回 PATH，最后才 PowerShell。
+   只在 WinINet 主路径失败时才走这里，顺序：curl → certutil → PowerShell。
+   注意不能只写裸 "curl.exe" 让 CreateProcess 去搜 PATH：32 位进程的
+   System32 会被 WOW64 重定向到 SysWOW64，而 Windows 只随系统带了 64 位
+   curl.exe，x86 版会找不到。所以先试系统目录全路径（含 Sysnative），
+   再退回 PATH；没有 curl 就用 Win7+ 自带的 certutil；最后才 PowerShell。
    -------------------------------------------------------------------------- */
 static int curl_download(const char *url,const wchar_t *dst){
   DeleteFileW(dst);
@@ -279,15 +280,27 @@ static int curl_download(const char *url,const wchar_t *dst){
                            CREATE_NO_WINDOW,NULL,NULL,&si,&pi);
   }
   if(!started){
-    /* 最后兜底：PowerShell。老 .NET Framework 默认不启用 TLS 1.2，
-       GitHub 要求 TLS 1.2，所以这里显式打开，否则一定握手失败。 */
+    /* 次兜底：certutil.exe（Win7+ 系统自带，走系统 HTTP 栈，不受老 .NET 限制） */
+    memset(&pi,0,sizeof pi);
+    _snwprintf(cmd,4096,
+      L"certutil.exe -urlcache -split -f \"%ls\" \"%ls\"", full,dst);
+    started=CreateProcessW(NULL,cmd,NULL,NULL,FALSE,
+                           CREATE_NO_WINDOW,NULL,NULL,&si,&pi);
+  }
+  if(!started){
+    /* 最后兜底：PowerShell WebClient。TLS 1.2 用数值 3072 经 [Enum]::ToObject
+       设置 —— .NET 2.0/3.5 的 SecurityProtocolType 没有 Tls12 具名成员，
+       直接写 [Net.SecurityProtocolType]::Tls12 会在赋值阶段抛
+       PropertyAssignmentException（提示「可能的枚举值为 Ssl3、Tls」），
+       下载还没开始就失败。整段包 try/catch，赋值失败也继续尝试。 */
     memset(&pi,0,sizeof pi);
     _snwprintf(cmd,4096,
       L"powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "
       L"\"$ProgressPreference='SilentlyContinue'; "
-      L"[Net.ServicePointManager]::SecurityProtocol="
-      L"[Net.SecurityProtocolType]::Tls12; "
-      L"(New-Object System.Net.WebClient).DownloadFile('%ls','%ls')\"",
+      L"try { [Net.ServicePointManager]::SecurityProtocol="
+      L"[Enum]::ToObject([Net.SecurityProtocolType],3072) } catch {}; "
+      L"try { (New-Object System.Net.WebClient).DownloadFile('%ls','%ls'); "
+      L"exit 0 } catch { exit 1 }\"",
       full,dst);
     started=CreateProcessW(NULL,cmd,NULL,NULL,FALSE,
                            CREATE_NO_WINDOW,NULL,NULL,&si,&pi);

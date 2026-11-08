@@ -82,18 +82,23 @@ cd src && sh build.sh        # 产物写到 ../../exe（仓库外）
 - GitHub 返回 **403 / 429**（未登录时每小时 60 次 API 限流）会直接给提示，不会去解析错误页
 - 没网、代理拦截、下载到的不是 exe，都只提示、不改动旧文件
 
-**下载主路径是 WinINet 直下** —— 和 v1.2 能顺利升级到 1.3 时用的是同一套链路。`curl.exe` / PowerShell 只作兜底：主路径失败时才依次尝试系统目录里的 curl（含 32 位进程用的 `Sysnative` 路径）、PATH 里的 curl、PowerShell WebClient（显式开启 TLS 1.2）。
+**下载主路径是 WinINet 直下** —— 和 v1.2 能顺利升级到 1.3 时用的是同一套链路。主路径失败才依次兜底：系统目录里的 curl（含 32 位进程用的 `Sysnative` 路径）→ PATH 里的 curl → **`certutil.exe`**（Win7+ 系统自带，走系统 HTTP 栈，不受老 .NET 限制）→ PowerShell WebClient。
+
+**老系统特别注意**：PowerShell 2.0 / .NET 3.5 的 `SecurityProtocolType` 只有 `Ssl3`、`Tls` 两个成员，写 `[Net.SecurityProtocolType]::Tls12` 会直接抛 `PropertyAssignmentException`，下载还没开始就失败。所以 TLS 1.2 用数值 `3072` 经 `[Enum]::ToObject` 设置，并整段包在 `try/catch` 里 —— 赋值失败也继续尝试。手动 `KimiPetUpdater.bat` 同样按 curl → certutil → PowerShell 顺序走。
 
 覆盖用的临时 bat 用**系统 OEM 代码页**写、不带 `chcp`：以前写 UTF-8 再靠 `chcp 65001` 撑着，中文 Windows 按 GBK 预读批处理行，中文路径会变成乱码（如「张三」→「寮犱笁」），`copy` 找不到源文件，覆盖就悄悄失败了。
 
 下载完会校验 PE 头（`MZ`）和体积，失败只提示、**不改动旧文件也不退出程序**。
 
-**主路径也下载不下来怎么办**（两选一）：
+**主路径也下载不下来怎么办**：
 
+- **老系统最省事的一条（推荐）**：直接用浏览器打开 Releases 页面下载 `KimiPet_x64.exe`，下载完**再运行一次** `KimiPetUpdater.bat`。它会扫描 Downloads / 桌面 / 脚本同目录 / TEMP，找到刚下载的 exe、显示大小与日期让你确认、校验 PE 头后自动替换并重启 —— **全程不走命令行下载**。Win7 没有 `curl.exe`、系统未启用 TLS 1.2、火绒拦 `certutil` / PowerShell，都不影响这条路径。若火绒弹了下载提示，点「允许」后**重新运行一次**再试（弹窗到达时对应工具往往已经放弃）。
 - 设环境变量 `KIMIPET_MIRROR` 为镜像前缀（例如 `https://ghproxy.net/`），程序会自动拼在直链前面；
-- 或者从 Release 附件下载 **`KimiPetUpdater.bat`**，放到 exe 同目录，退出 KimiPet 后双击运行 —— 它用 `latest/download/` 稳定直链自动下载覆盖并重启。这也是 **v1.3 ~ v1.3.3 老版本用户**的升级办法：那些已经发出去的 exe 内建下载方式改不了，手动跑一次更新器即可跨过去，之后新版就能自己更新了。
+- 或者从 Release 附件下载 **`KimiPetUpdater.bat`**，放到 exe 同目录，退出 KimiPet 后双击运行 —— 它用 `latest/download/` 稳定直链自动下载覆盖并重启。这也是 **v1.3 ~ v1.3.3 老版本用户**的升级办法：那些已经发出去的 exe 内建下载方式改不了，手动跑一次更新器即可跨过去，之后新版就能自己更新了。更新器依次试 curl / certutil / PowerShell，三条都不通会自动打开 Releases 页面并提示用上面的「浏览器下载 + 拾取」办法。
 
-发版时 Release 附件里必须有**独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`**（程序按架构名直接找这两个文件下载），否则检查更新会提示找不到安装包。
+发版时 Release 附件里必须有**独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`**（程序按架构名直接找这两个文件下载），否则检查更新会提示找不到安装包。附件里也要放上**最新版**的 `KimiPetUpdater.bat`，别沿用旧 Release 上传过的那份。
+
+**别把 Release 存成草案（draft）**：`/releases/latest` 只返回最新的**非草案、非预发布** Release，而 `KimiPetUpdater.bat` 用的是 `latest/download/` 稳定直链；草案状态下它会指向上一个正式版，本地若是更新的版本反而会被覆盖成旧版。草案附件的匿名下载还会返回 404。CI 里已固定 `draft: false` / `prerelease: false`，如果网页上看到 `Draft` 标记，进 Edit → **Publish release** 即可。
 
 ### 调大小
 

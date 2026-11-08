@@ -87,8 +87,12 @@ KimiPet_源码与程序
 - **`memset` 参数错位**：`memset(&P,sizeof(P),0)` 是错的，正确是 `memset(&P,0,sizeof P)`。
 - **`_snwprintf` 宽字符串**必须用 `%ls`，不能用 `%s`。
 - **需求有歧义时别自己挑一个解释闷头做**：先按上下文还原，仍拿不准就问一句。曾把「不动代表屏息」读成「不设屏息相」，把该做的四相循环砍成了两相，下一轮才补回来。
+- **bat 里定位文件别用带引号的通配符，也别依赖 `pushd`**：`for %%f in ("%~dp0*.exe")` 拿到的是字面字符串，不展开；而 `pushd` 在部分 cmd / wine 环境会直接失败（实测 `PUSHD FAILED`）。可靠写法是 `dir /b /o-d "路径\*.exe" 2^>nul` 配 `for /f "delims="`，再自己拼全路径、`%%~ff` 取绝对路径。曾经因此找不到旧文件名 `MiniPet_x64.exe`。
 - **所有 `.bat` 必须纯 ASCII**：注释、`echo`、`title`、`REM` 一律英文，不写中文、不用全角标点，也不要 `chcp 65001`（部分 cmd 代码页下 bat 文件按 ANSI 解析，一个中文就可能整段失效）。交付前用「字节 ≥ 128 计数为 0」校验，包括 `KimiPetUpdater.bat` 和 `build.bat`。**程序运行时生成的覆盖 bat 同样适用**：用 `CP_OEMCP` 编码、不加 chcp，否则中文路径在 GBK cmd 下乱码、`copy` 静默失败。
 - **版本号显示带 `v` 前缀**（`v1.4`），比较用数字宏不影响。
 - **发版必须打 tag** 才会触发 Release；只 push 分支只会构建不发布。
 - **Release 附件平铺、不打包 zip**；必须有独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`（「检查更新」按架构名找），外加 `KimiPetUpdater.bat` 供老版本用户手动升级。
+- **老 .NET 没有 `Tls12` 具名枚举**：PowerShell 2.0 / .NET 3.5 的 `SecurityProtocolType` 只有 `Ssl3`、`Tls`，写 `[Net.SecurityProtocolType]::Tls12` 会在赋值阶段抛 `PropertyAssignmentException`（报错「可能的枚举值为 Ssl3、Tls」），下载还没开始就死。用数值 `3072` 经 `[Enum]::ToObject([Net.SecurityProtocolType],3072)` 设置并包 try/catch；兜底顺序里优先 Win7+ 自带的 `certutil.exe`（走系统 HTTP 栈，不受 .NET 版本限制）。
+- **Release 不能是草案（draft）**：`/releases/latest` 忽略 draft 与 prerelease，`KimiPetUpdater.bat` 走 `latest/download/` 直链，草案时会拿到上一个正式版甚至把本地新版覆盖成旧版；草案附件匿名下载还返回 404。CI 固定 `draft: false`。发版后刷新页面确认 tag 出现在列表且标着 Latest。
+- **老机器上别指望命令行下载**：Win7 没有 `curl.exe`、系统常未启用 TLS 1.2、火绒等会拦 `certutil` / PowerShell，三条工具可能全灭而浏览器却完全能打开 GitHub。`KimiPetUpdater.bat` 要有「浏览器下载 + 拾取」模式：扫描 Downloads / 桌面 / 脚本目录 / TEMP 里已下载的 exe，校验 PE 后直接替换，彻底绕开命令行下载。安全软件点「允许」后要**重新运行一次**（弹窗到达时工具往往已放弃）。
 - **别把下载塞进短超时的看门狗**：1.3「修卡顿」时给 API 请求加了 20 秒硬超时，顺手把下载 exe 也包进去，结果检测得到更新、几百 KB 的 exe 永远下不下来。看门狗只管 API 小请求，下载单独给 2 分钟。同理，别因为一次沙盒里的 403 就把用户实证可用的 WinINet 下载链路整个换掉 —— 先查自己上一版改了什么。
