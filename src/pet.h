@@ -48,9 +48,9 @@ extern double g_simNow;
 /* ---------------- 版本 / 仓库（自动更新用） ---------------- */
 #define KP_VERSION_MAJOR 1
 #define KP_VERSION_MINOR 4
-#define KP_VERSION_PATCH 1
-#define KP_VERSION_STR   "v1.4.1"
-#define KP_VERSION_W    L"v1.4.1"
+#define KP_VERSION_PATCH 2
+#define KP_VERSION_STR   "v1.4.2"
+#define KP_VERSION_W    L"v1.4.2"
 #define KP_REPO_OWNER    "Minecraftgoose"
 #define KP_REPO_NAME     "kimi-pet"
 #define KP_REPO_OWNER_W  L"Minecraftgoose"
