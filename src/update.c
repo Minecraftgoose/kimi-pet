@@ -89,17 +89,39 @@ int find_asset_url(const char *json,const char *want,char *out,int outn){
    阻塞 UI 线程，球会卡住不动；GitHub 403 时又因为 find_asset_url 的死循环
    彻底失去响应，只能等系统杀进程。
 
-   现在做三层防护：
+   现在做四层防护：
      1. 所有网络 IO 都在工作线程，主线程只弹对话框，球全程照常动；
      2. WinINet 设超时 + 先查状态码，403/429 立即返回友好提示；
      3. 独立看门狗线程：万一 WinINet 自己不理会超时（某些代理/wine 就是
-        这样），20 秒后强制关闭请求句柄把工作线程拽出来，绝不留挂死线程。
+        这样），强制关闭请求句柄把工作线程拽出来，绝不留挂死线程；
+     4. 看门狗【同时覆盖下载阶段】，阈值比 API 长得多。以前只监控 API，
+        下载若永久阻塞，g_updBusy 永远不清零，用户再点检查更新毫无反应。
+
+   超时口径（都可用编译期宏覆盖，方便本地慢速测试）：
+     API     请求 15s / 硬超时 30s
+     下载    连接 20s（独立，别让"连不上"等满下载时长）
+             接收间隔 300s（慢速但持续来数据就不算超时）
+             硬超时 330s（总时长兜底，超时给明确提示并允许重试）
    ========================================================================== */
 
-#define UPD_TIMEOUT_MS   8000        /* API 请求：小 JSON，8 秒足够 */
-#define UPD_DOWNLOAD_MS  120000      /* 下载 exe：几百 KB，给足 2 分钟 */
-#define UPD_HARD_MS      20000       /* 看门狗硬超时：只作用于 API 请求阶段 */
-#define UPD_MAX_BODY     (8*1024*1024)
+#ifndef UPD_TIMEOUT_MS
+#define UPD_TIMEOUT_MS   15000       /* API 请求：小 JSON，15 秒（原 8 秒，慢速网络放宽） */
+#endif
+#ifndef UPD_CONNECT_MS
+#define UPD_CONNECT_MS   20000       /* 连接超时独立出来 */
+#endif
+#ifndef UPD_DOWNLOAD_MS
+#define UPD_DOWNLOAD_MS  300000      /* 下载：接收间隔超时 5 分钟 */
+#endif
+#ifndef UPD_HARD_MS
+#define UPD_HARD_MS      30000       /* 看门狗：API 阶段硬超时 */
+#endif
+#ifndef UPD_DL_HARD_MS
+#define UPD_DL_HARD_MS   330000      /* 看门狗：下载阶段硬超时（略大于 300s，留余量） */
+#endif
+#ifndef UPD_MAX_BODY
+#define UPD_MAX_BODY     (16*1024*1024)
+#endif
 
 /* GitHub API 强制要求 User-Agent，不带会直接 403 */
 static const wchar_t *UPD_GH_HEADERS =
@@ -120,7 +142,16 @@ enum {
 };
 
 /* 看门狗单独发的超时提示，不依赖 UPD_CTX 的生命周期 */
-typedef struct { wchar_t msg[300]; } UPD_TMO_MSG;
+typedef struct { wchar_t msg[300]; int isDownload; } UPD_TMO_MSG;
+
+/* 一次 WinINet 请求的句柄槽位。看门狗超时时要关掉的是【正在阻塞读的 hUrl】，
+   只关父句柄 hInet 在部分实现里唤不醒 InternetReadFile。用 Interlocked
+   交换取所有权，保证工作线程和看门狗不会重复关闭同一个句柄。 */
+typedef struct {
+  volatile PVOID inet;
+  volatile PVOID url;
+  volatile LONG  abort;      /* 看门狗置位，读循环每轮检查 */
+} HTTP_SLOTS;
 
 typedef struct {
   HWND    h;
@@ -136,9 +167,10 @@ typedef struct {
 
   volatile LONG  finished;  /* 工作线程收尾了，看门狗可以退了 */
   volatile LONG  netActive; /* 正在做网络 IO 时才计时 */
+  volatile LONG  netKind;   /* 1 = API 请求，2 = 下载 exe */
   volatile LONG  netStart;  /* GetTickCount 起点 */
   volatile LONG  timedOut;  /* 看门狗已判定超时 */
-  volatile PVOID hReq;      /* 当前 WinINet 句柄，供看门狗强制关闭 */
+  HTTP_SLOTS     slots;     /* 当前 WinINet 句柄，供看门狗强制关闭 */
 } UPD_CTX;
 
 static volatile LONG g_updBusy=0;
@@ -146,28 +178,44 @@ static volatile LONG g_updBusy=0;
 #define EXCHANGE(p,v) InterlockedExchange((volatile LONG*)(p),(LONG)(v))
 #define READ(p)       InterlockedCompareExchange((volatile LONG*)(p),0,0)
 
-static void net_begin(UPD_CTX *c){
+static void net_begin(UPD_CTX *c,int kind){
+  EXCHANGE(&c->netKind,kind);
   EXCHANGE(&c->netStart,(LONG)GetTickCount());
   EXCHANGE(&c->netActive,1);
 }
-static void net_end(UPD_CTX *c){ EXCHANGE(&c->netActive,0); }
+static void net_end(UPD_CTX *c){
+  EXCHANGE(&c->netActive,0);
+  EXCHANGE(&c->netKind,0);
+}
+
+/* 取回句柄所有权后再关：看门狗可能已经取走并关闭了 */
+static void hg_close(HTTP_SLOTS *s,HINTERNET hUrl,HINTERNET hInet){
+  HINTERNET u = s ? (HINTERNET)InterlockedExchangePointer(&s->url,NULL) : hUrl;
+  HINTERNET i = s ? (HINTERNET)InterlockedExchangePointer(&s->inet,NULL) : hInet;
+  if(u) InternetCloseHandle(u);
+  if(i) InternetCloseHandle(i);
+}
 
 /* --------------------------------------------------------------------------
    http_get_ex：带超时、带状态码、带响应体上限的一次 GET
-   reqSlot 存父句柄，看门狗超时时会关掉它来中断阻塞中的读操作。
+   slots 存父/子句柄，看门狗超时时会关掉它们来中断阻塞中的读操作。
    -------------------------------------------------------------------------- */
 static int http_get_ex(const char *url,const wchar_t *headers,
                        char **out,int *plen,DWORD *status,
-                       volatile PVOID *reqSlot,DWORD tmo){
+                       HTTP_SLOTS *slots,DWORD tmo){
   *out=NULL; *plen=0; *status=0;
 
   HINTERNET hInet=InternetOpenW(L"KimiPet/" KP_VERSION_W,
                                 INTERNET_OPEN_TYPE_PRECONFIG,NULL,NULL,0);
   if(!hInet) return 0;
-  if(reqSlot) InterlockedExchangePointer(reqSlot,hInet);
+  if(slots) InterlockedExchangePointer(&slots->inet,hInet);
 
-  DWORD t=tmo;
-  InternetSetOption(hInet,INTERNET_OPTION_CONNECT_TIMEOUT,     &t,sizeof t);
+  /* 连接超时独立：慢速下载要给足接收时间，但"连不上"不该陪着等 5 分钟。
+     其余超时用 tmo —— RECEIVE / DATA_RECEIVE 是"两次数据到达之间的间隔"，
+     只要持续来数据，再慢也不算超时（这正是 v1.2 硬等的成功率来源）。 */
+  DWORD ct = tmo<UPD_CONNECT_MS ? tmo : UPD_CONNECT_MS;
+  DWORD t  = tmo;
+  InternetSetOption(hInet,INTERNET_OPTION_CONNECT_TIMEOUT,     &ct,sizeof ct);
   InternetSetOption(hInet,INTERNET_OPTION_SEND_TIMEOUT,        &t,sizeof t);
   InternetSetOption(hInet,INTERNET_OPTION_RECEIVE_TIMEOUT,     &t,sizeof t);
   InternetSetOption(hInet,INTERNET_OPTION_DATA_SEND_TIMEOUT,   &t,sizeof t);
@@ -175,8 +223,7 @@ static int http_get_ex(const char *url,const wchar_t *headers,
 
   wchar_t wurl[2048];
   if(MultiByteToWideChar(CP_UTF8,0,url,-1,wurl,2048)<=0){
-    if(reqSlot) InterlockedExchangePointer(reqSlot,NULL);
-    InternetCloseHandle(hInet); return 0;
+    hg_close(slots,NULL,hInet); return 0;
   }
   /* 按协议决定要不要 SECURE —— asset 直链偶尔是 http，别误加标志 */
   DWORD flags = INTERNET_FLAG_RELOAD|INTERNET_FLAG_NO_CACHE_WRITE|
@@ -184,37 +231,31 @@ static int http_get_ex(const char *url,const wchar_t *headers,
                 INTERNET_FLAG_NO_COOKIES;
   if(strncmp(url,"https://",8)==0) flags |= INTERNET_FLAG_SECURE;
   HINTERNET hUrl=InternetOpenUrlW(hInet,wurl,headers,0,flags,0);
-  if(!hUrl){
-    if(reqSlot) InterlockedExchangePointer(reqSlot,NULL);
-    InternetCloseHandle(hInet); return 0;
-  }
+  if(!hUrl){ hg_close(slots,NULL,hInet); return 0; }
+  if(slots) InterlockedExchangePointer(&slots->url,hUrl);
   /* 有些 WinINet 实现只对请求句柄认超时，句柄创建后再设一遍 */
   InternetSetOption(hUrl,INTERNET_OPTION_RECEIVE_TIMEOUT,     &t,sizeof t);
   InternetSetOption(hUrl,INTERNET_OPTION_DATA_RECEIVE_TIMEOUT,&t,sizeof t);
   InternetSetOption(hUrl,INTERNET_OPTION_SEND_TIMEOUT,        &t,sizeof t);
 
-  /* 先读状态码：403/429 这类限流直接返回，不去解析错误页 */
+  /* 先读状态码：403/429 这类限流直接返回，不去解析错误页。
+     这条不能退回 v1.2 的"不查状态码"——旧版只是把错误页当 JSON 解析，
+     最后报"版本号看不懂"，并没有更容易成功。 */
   DWORD code=0, sz=sizeof code;
   if(HttpQueryInfoW(hUrl,HTTP_QUERY_STATUS_CODE|HTTP_QUERY_FLAG_NUMBER,
                     &code,&sz,NULL)) *status=code;
-  if(code>=400){
-    InternetCloseHandle(hUrl);
-    if(reqSlot) InterlockedExchangePointer(reqSlot,NULL);
-    InternetCloseHandle(hInet);
-    return 0;
-  }
+  if(code>=400){ hg_close(slots,hUrl,hInet); return 0; }
 
   size_t cap=16384, len=0;
   char *buf=(char*)malloc(cap+1);
-  if(!buf){
-    InternetCloseHandle(hUrl);
-    if(reqSlot) InterlockedExchangePointer(reqSlot,NULL);
-    InternetCloseHandle(hInet); return 0;
-  }
+  if(!buf){ hg_close(slots,hUrl,hInet); return 0; }
   int ok=1;
   for(;;){
+    if(slots && READ(&slots->abort)){ ok=0; break; }   /* 看门狗已判定超时 */
     if(len+4096+1>cap){
-      if(cap>=UPD_MAX_BODY) break;
+      /* 响应体超过上限：明确失败。以前这里直接 break 却仍 return 1，
+         截断的 PE 会过 MZ 校验并覆盖自己 —— 能把安装写坏。 */
+      if(cap>=UPD_MAX_BODY){ ok=0; break; }
       size_t nc=cap*2; if(nc>UPD_MAX_BODY) nc=UPD_MAX_BODY;
       char *nb=(char*)realloc(buf,nc+1);
       if(!nb){ ok=0; break; }
@@ -224,12 +265,10 @@ static int http_get_ex(const char *url,const wchar_t *headers,
     if(!InternetReadFile(hUrl,buf+len,(DWORD)(cap-len-1),&got)){ ok=0; break; }
     if(got==0) break;
     len+=got;
-    if(len>=UPD_MAX_BODY) break;
+    if(len>=UPD_MAX_BODY){ ok=0; break; }   /* 同上，绝不把超限数据当成功 */
   }
   buf[len]=0;                 /* 分配时多留了 1 字节，这里永远安全 */
-  InternetCloseHandle(hUrl);
-  if(reqSlot) InterlockedExchangePointer(reqSlot,NULL);
-  InternetCloseHandle(hInet);
+  hg_close(slots,hUrl,hInet);
   if(!ok||len==0){ free(buf); return 0; }
   *out=buf; *plen=(int)len;
   return 1;
@@ -244,7 +283,7 @@ static int http_get_ex(const char *url,const wchar_t *headers,
    curl.exe，x86 版会找不到。所以先试系统目录全路径（含 Sysnative），
    再退回 PATH；没有 curl 就用 Win7+ 自带的 certutil；最后才 PowerShell。
    -------------------------------------------------------------------------- */
-static int curl_download(const char *url,const wchar_t *dst){
+static int curl_download(const char *url,const wchar_t *dst,volatile LONG *abort){
   DeleteFileW(dst);
   wchar_t wurl[2048];
   if(MultiByteToWideChar(CP_UTF8,0,url,-1,wurl,2048)<=0) return 0;
@@ -306,7 +345,16 @@ static int curl_download(const char *url,const wchar_t *dst){
                            CREATE_NO_WINDOW,NULL,NULL,&si,&pi);
     if(!started){ DeleteFileW(dst); return 0; }
   }
-  DWORD wr=WaitForSingleObject(pi.hProcess,200000);
+  /* 分段等待：每 250ms 看一眼 abort，看门狗判定下载超时就能立刻掐掉进程，
+     不用陪着 curl 的 --max-time 180 干等。总上限仍是 200 秒。 */
+  DWORD waited=0, wr=WAIT_TIMEOUT;
+  for(;;){
+    if(abort && READ(abort)) break;
+    wr=WaitForSingleObject(pi.hProcess,250);
+    if(wr==WAIT_OBJECT_0) break;
+    waited+=250;
+    if(waited>=200000) break;
+  }
   DWORD code=1;
   if(wr==WAIT_OBJECT_0) GetExitCodeProcess(pi.hProcess,&code);
   else TerminateProcess(pi.hProcess,1);
@@ -334,13 +382,18 @@ static int curl_download(const char *url,const wchar_t *dst){
 
    v1.2 就是这么做的，用户实证能从 1.2 顺利升级到 1.3。1.3 那次「修卡顿」
    把这段包进 20 秒看门狗，下载几百 KB 一旦超过 20 秒就被强行关闭句柄，
-   于是「检测得到更新、exe 下不下来」。现在下载不接看门狗：
-   reqSlot 传 NULL、不调 net_begin()，看门狗的 netActive 一直是 0。
+   于是「检测得到更新、exe 下不下来」。
+
+   现在下载【仍然接看门狗】，但阈值是独立的 330 秒（API 才 30 秒），
+   并把 hUrl 句柄交给看门狗 —— 万一下载永久阻塞，能关掉真正阻塞的句柄、
+   给用户明确提示、释放 g_updBusy 让他可以重试。既保留 v1.2 的硬等成功率，
+   又不留挂死线程。
    -------------------------------------------------------------------------- */
-static int wininet_download(const char *url,const wchar_t *dst,DWORD *status){
+static int wininet_download(const char *url,const wchar_t *dst,DWORD *status,
+                            HTTP_SLOTS *slots){
   DeleteFileW(dst);
   char *data=NULL; int len=0; DWORD st=0;
-  int ok=http_get_ex(url,NULL,&data,&len,&st,NULL,UPD_DOWNLOAD_MS);
+  int ok=http_get_ex(url,NULL,&data,&len,&st,slots,UPD_DOWNLOAD_MS);
   if(status) *status=st;
   if(!ok||!data){ free(data); return 0; }
   /* 下下来的是不是 PE：看 MZ 头 + 体积，防止把 403/404 网页当 exe 覆盖自己 */
@@ -353,9 +406,11 @@ static int wininet_download(const char *url,const wchar_t *dst,DWORD *status){
   return 1;
 }
 
-static int download_exe(const char *url,const wchar_t *dst,DWORD *status){
-  if(wininet_download(url,dst,status)) return 1;   /* 主路径：v1.2 实证可用 */
-  return curl_download(url,dst);                    /* 兜底：curl / PowerShell */
+static int download_exe(const char *url,const wchar_t *dst,DWORD *status,
+                        HTTP_SLOTS *slots){
+  if(wininet_download(url,dst,status,slots)) return 1; /* 主路径：v1.2 实证可用 */
+  /* 兜底也吃同一个 abort 标志，超时能被立刻掐掉 */
+  return curl_download(url,dst,slots?&slots->abort:NULL);
 }
 
 /* 写一个 bat：等本进程结束 → 用新 exe 覆盖 → 启动 → 自删 */
@@ -394,8 +449,8 @@ static int write_updater_bat(const wchar_t *bat,const wchar_t *src,const wchar_t
 
 /* --------------------------------------------------------------------------
    看门狗：WinINet 的超时选项在部分环境（包括 wine、某些代理）根本不生效，
-   所以这里自己计时。只在 netActive=1 期间累计，用户看确认框时不打扰。
-   超时就关掉请求句柄，把工作线程从 InternetReadFile 里拽出来。
+   所以这里自己计时。netKind 区分 API(1) / 下载(2)，阈值各自独立。
+   超时就关掉【正在阻塞读的 hUrl】再关父句柄，把工作线程拽出来。
    -------------------------------------------------------------------------- */
 static DWORD WINAPI upd_watch(LPVOID arg){
   UPD_CTX *c=(UPD_CTX*)arg;
@@ -403,21 +458,34 @@ static DWORD WINAPI upd_watch(LPVOID arg){
     if(READ(&c->finished)) break;
     if(READ(&c->netActive)){
       DWORD st=(DWORD)READ(&c->netStart);
-      if(GetTickCount()-st > UPD_HARD_MS){
+      LONG  kind=READ(&c->netKind);
+      DWORD limit = (kind==2) ? UPD_DL_HARD_MS : UPD_HARD_MS;
+      if(GetTickCount()-st > limit){
         if(InterlockedCompareExchange(&c->timedOut,1,0)==0){
-          /* 尽力而为：关句柄在部分实现里能唤醒阻塞的读，唤不醒也没关系，
-             UI 早就不在这个线程上了，下面照样给用户一个明确结果。 */
-          PVOID r=InterlockedExchangePointer(&c->hReq,NULL);
-          if(r) InternetCloseHandle(r);
+          int isDl = (kind==2);
+          /* 先置 abort（读循环每轮检查），再关 hUrl（唤醒阻塞的读），
+             最后关父句柄。顺序不能反：只关 hInet 在部分实现里唤不醒。 */
+          EXCHANGE(&c->slots.abort,1);
+          PVOID r=InterlockedExchangePointer(&c->slots.url,NULL);
+          if(r) InternetCloseHandle((HINTERNET)r);
+          r=InterlockedExchangePointer(&c->slots.inet,NULL);
+          if(r) InternetCloseHandle((HINTERNET)r);
           /* 用独立的小消息体，不引用 ctx —— 工作线程可能永远醒不过来 */
           UPD_TMO_MSG *m=(UPD_TMO_MSG*)calloc(1,sizeof *m);
           if(m){
-            _snwprintf(m->msg,300,
-              L"检查更新超时（20 秒没响应），已自动放弃。\n\n"
-              L"球不会卡住，稍后再试即可；也能手动到 Releases 页面看看。");
+            m->isDownload=isDl;
+            if(isDl)
+              _snwprintf(m->msg,300,
+                L"下载新版本超时（等了 5 分钟没完成），已自动放弃。\n\n"
+                L"旧文件没有被改动，球也不会卡住；可以稍后重试，"
+                L"或用随附的 KimiPetUpdater.bat 手动升级。");
+            else
+              _snwprintf(m->msg,300,
+                L"检查更新超时（30 秒没响应），已自动放弃。\n\n"
+                L"球不会卡住，稍后再试即可；也能手动到 Releases 页面看看。");
             if(!PostMessageW(c->h,KP_WM_UPDATE,1,(LPARAM)m)) free(m);
           }
-          InterlockedExchange(&g_updBusy,0);
+          InterlockedExchange(&g_updBusy,0);   /* 关键：允许用户重试 */
         }
         break;
       }
@@ -463,7 +531,7 @@ static void upd_override_timeout(UPD_CTX *c){
   if(READ(&c->timedOut)){
     c->stage=UPD_ERR_NET;
     _snwprintf(c->msg,600,
-      L"检查更新超时（20 秒没响应），已自动放弃。\n\n"
+      L"检查更新超时（30 秒没响应），已自动放弃。\n\n"
       L"球不会卡住，稍后再试即可；也能手动到 Releases 页面看看。");
   }
 }
@@ -475,8 +543,8 @@ static DWORD WINAPI upd_thread(LPVOID arg){
             KP_REPO_OWNER,KP_REPO_NAME);
 
   char *json=NULL; int jlen=0; DWORD st=0;
-  net_begin(c);
-  int ok=http_get_ex(api,UPD_GH_HEADERS,&json,&jlen,&st,&c->hReq,UPD_TIMEOUT_MS);
+  net_begin(c,1);   /* API 阶段：30 秒硬超时 */
+  int ok=http_get_ex(api,UPD_GH_HEADERS,&json,&jlen,&st,&c->slots,UPD_TIMEOUT_MS);
   net_end(c);
 
   if(!ok){
@@ -568,10 +636,14 @@ static DWORD WINAPI upd_thread(LPVOID arg){
   wcscpy(c->dst,self);
 
   /* 下载：主路径 WinINet 直下（v1.2 实证可用），curl 仅兜底。
-     绝不能在这里调 net_begin() —— 20 秒看门狗是给 API 小请求的，
-     1.3 那次把下载也包进去，结果 exe 永远下不下来。 */
+     看门狗同样覆盖这段，但用独立的 330 秒阈值 —— 1.3 那次是错在
+     把下载塞进【20 秒】的 API 看门狗，不是错在"下载不该被监控"。 */
   DWORD dlStatus=0;
-  int dl=download_exe(c->url,c->src,&dlStatus);
+  net_begin(c,2);
+  int dl=download_exe(c->url,c->src,&dlStatus,&c->slots);
+  net_end(c);
+  /* 看门狗已提示过，这里不能再弹一次框；直接收尾并允许用户重试 */
+  if(READ(&c->timedOut)){ DeleteFileW(c->src); upd_cleanup(c); return 0; }
   if(!dl){
     c->stage=UPD_ERR_DOWNLOAD;
     _snwprintf(c->msg,600,
@@ -579,7 +651,7 @@ static DWORD WINAPI upd_thread(LPVOID arg){
       L"检查更新用的 API 能通，但下载 exe 没成；常见原因是代理/杀软拦截，"
       L"或 Release 附件还没传好。\n\n"
       L"可以重试；仍不行就到 Releases 页面手动下载，或用随附的 "
-      L"KimiPetUpdater.bat 手动升级。\n\n"
+      L"KimiPetUpdater.bat 手动升级（浏览器下载 + 自动拾取，不走命令行）。\n\n"
       L"旧文件没有被改动，本程序也不会退出。",
       (unsigned long)dlStatus);
     DeleteFileW(c->src);
