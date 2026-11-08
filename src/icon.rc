@@ -1,8 +1,8 @@
 IDI_ICON1  ICON  DISCARDABLE  "KimiPet.ico"
 
 1 VERSIONINFO
-FILEVERSION     1,4,0,0
-PRODUCTVERSION  1,4,0,0
+FILEVERSION     1,4,1,0
+PRODUCTVERSION  1,4,1,0
 FILEOS          0x40004      /* VOS_NT_WINDOWS32 */
 FILETYPE        1            /* VFT_APP */
 BEGIN
@@ -12,9 +12,9 @@ BEGIN
     BEGIN
       VALUE "CompanyName",      "KimiPet"
       VALUE "FileDescription",  "Kimi 小圆球 · 桌面宠物"
-      VALUE "FileVersion",      "1.4.0.0"
+      VALUE "FileVersion",      "1.4.1.0"
       VALUE "ProductName",      "Kimi 小圆球"
-      VALUE "ProductVersion",   "1.4.0.0"
+      VALUE "ProductVersion",   "1.4.1.0"
     END
   END
   BLOCK "VarFileInfo"

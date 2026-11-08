@@ -149,7 +149,16 @@ jobs:
 
           # 独立手动更新器：给「能检测到新版本但下载不下来」的老版本用户
           # 手动跑一次用；也作为普通用户的备用升级手段。
-          cp "$GITHUB_WORKSPACE/src/KimiPetUpdater.bat" "$DIST/"
+          #
+          # 这里拷的是 checkout 后的源码，而本工作流会按 tag 强制检出那个
+          # tag 的 commit —— 若 tag 打在旧 commit 上，产出的就是旧 bat，
+          # 而且 CI 会一路绿灯发到 Release 上。用关键标记卡住这种情况。
+          BAT="$GITHUB_WORKSPACE/src/KimiPetUpdater.bat"
+          grep -q 'call :scan' "$BAT" || {
+            echo "::error::KimiPetUpdater.bat 是旧版（缺浏览器拾取模式）。检查 tag 是否打在最新 commit 上。"
+            exit 1
+          }
+          cp "$BAT" "$DIST/"
 
           echo "--- Release 附件（平铺） ---"
           ls -la "$DIST"/*.exe "$DIST"/*.bat
