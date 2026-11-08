@@ -39,7 +39,7 @@ echo Downloading... this may take a while.
 REM Try curl directly; if unavailable or failed, fall back to PowerShell.
 curl.exe -L -f -sS --retry 2 --connect-timeout 15 --max-time 180 -o "%SRC%" "%URL%"
 if errorlevel 1 (
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; try { (New-Object System.Net.WebClient).DownloadFile('%URL%','%SRC%') } catch { exit 1 }"
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try { (New-Object System.Net.WebClient).DownloadFile('%URL%','%SRC%') } catch { exit 1 }"
   if errorlevel 1 goto fail
 )
 

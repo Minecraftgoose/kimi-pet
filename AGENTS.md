@@ -87,7 +87,8 @@ KimiPet_源码与程序
 - **`memset` 参数错位**：`memset(&P,sizeof(P),0)` 是错的，正确是 `memset(&P,0,sizeof P)`。
 - **`_snwprintf` 宽字符串**必须用 `%ls`，不能用 `%s`。
 - **需求有歧义时别自己挑一个解释闷头做**：先按上下文还原，仍拿不准就问一句。曾把「不动代表屏息」读成「不设屏息相」，把该做的四相循环砍成了两相，下一轮才补回来。
-- **所有 `.bat` 必须纯 ASCII**：注释、`echo`、`title`、`REM` 一律英文，不写中文、不用全角标点，也不要 `chcp 65001`（部分 cmd 代码页下 bat 文件按 ANSI 解析，一个中文就可能整段失效）。交付前用「字节 ≥ 128 计数为 0」校验，包括 `KimiPetUpdater.bat` 和 `build.bat`。
+- **所有 `.bat` 必须纯 ASCII**：注释、`echo`、`title`、`REM` 一律英文，不写中文、不用全角标点，也不要 `chcp 65001`（部分 cmd 代码页下 bat 文件按 ANSI 解析，一个中文就可能整段失效）。交付前用「字节 ≥ 128 计数为 0」校验，包括 `KimiPetUpdater.bat` 和 `build.bat`。**程序运行时生成的覆盖 bat 同样适用**：用 `CP_OEMCP` 编码、不加 chcp，否则中文路径在 GBK cmd 下乱码、`copy` 静默失败。
 - **版本号显示带 `v` 前缀**（`v1.4`），比较用数字宏不影响。
 - **发版必须打 tag** 才会触发 Release；只 push 分支只会构建不发布。
-- **Release 附件平铺、不打包 zip**；必须有独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`（「检查更新」按架构名找），外加 `KimiPetUpdater.bat` 供老版本用户手动升级。下载走系统 `curl.exe` + PowerShell 兜底，不要用 WinINet 下大文件：`github.com` 的 release 下载链路与 `api.github.com` 不同，国内常被拦且 WinINet 超时不生效。
+- **Release 附件平铺、不打包 zip**；必须有独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`（「检查更新」按架构名找），外加 `KimiPetUpdater.bat` 供老版本用户手动升级。
+- **别把下载塞进短超时的看门狗**：1.3「修卡顿」时给 API 请求加了 20 秒硬超时，顺手把下载 exe 也包进去，结果检测得到更新、几百 KB 的 exe 永远下不下来。看门狗只管 API 小请求，下载单独给 2 分钟。同理，别因为一次沙盒里的 403 就把用户实证可用的 WinINet 下载链路整个换掉 —— 先查自己上一版改了什么。

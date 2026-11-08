@@ -3,7 +3,11 @@
 
 /* ================= 检查更新 =================
    查 GitHub 上本仓库的最新 Release；比当前版本新的话，下载对应架构的 exe，
-   写个 bat 等本进程退出后覆盖并重启自己。                                    */
+   写个 bat 等本进程退出后覆盖并重启自己。
+
+   下载主路径用 WinINet 直下 —— 这是 v1.2 实证能走通的链路。曾经把它换掉，
+   又在「修卡顿」时把下载包进 20 秒看门狗，结果检测得到更新、exe 永远下不下来。
+   现在：看门狗只管 API 小请求，下载自己走宽松超时；curl 只作兜底。        */
 
 /* 目标 exe 文件名：64 位 / 32 位各一份 */
 const char *upd_asset_name(void){
@@ -92,8 +96,9 @@ int find_asset_url(const char *json,const char *want,char *out,int outn){
         这样），20 秒后强制关闭请求句柄把工作线程拽出来，绝不留挂死线程。
    ========================================================================== */
 
-#define UPD_TIMEOUT_MS   8000
-#define UPD_HARD_MS      20000       /* 看门狗硬超时 */
+#define UPD_TIMEOUT_MS   8000        /* API 请求：小 JSON，8 秒足够 */
+#define UPD_DOWNLOAD_MS  120000      /* 下载 exe：几百 KB，给足 2 分钟 */
+#define UPD_HARD_MS      20000       /* 看门狗硬超时：只作用于 API 请求阶段 */
 #define UPD_MAX_BODY     (8*1024*1024)
 
 /* GitHub API 强制要求 User-Agent，不带会直接 403 */
@@ -152,7 +157,8 @@ static void net_end(UPD_CTX *c){ EXCHANGE(&c->netActive,0); }
    reqSlot 存父句柄，看门狗超时时会关掉它来中断阻塞中的读操作。
    -------------------------------------------------------------------------- */
 static int http_get_ex(const char *url,const wchar_t *headers,
-                       char **out,int *plen,DWORD *status,volatile PVOID *reqSlot){
+                       char **out,int *plen,DWORD *status,
+                       volatile PVOID *reqSlot,DWORD tmo){
   *out=NULL; *plen=0; *status=0;
 
   HINTERNET hInet=InternetOpenW(L"KimiPet/" KP_VERSION_W,
@@ -160,7 +166,7 @@ static int http_get_ex(const char *url,const wchar_t *headers,
   if(!hInet) return 0;
   if(reqSlot) InterlockedExchangePointer(reqSlot,hInet);
 
-  DWORD t=UPD_TIMEOUT_MS;
+  DWORD t=tmo;
   InternetSetOption(hInet,INTERNET_OPTION_CONNECT_TIMEOUT,     &t,sizeof t);
   InternetSetOption(hInet,INTERNET_OPTION_SEND_TIMEOUT,        &t,sizeof t);
   InternetSetOption(hInet,INTERNET_OPTION_RECEIVE_TIMEOUT,     &t,sizeof t);
@@ -230,55 +236,63 @@ static int http_get_ex(const char *url,const wchar_t *headers,
 }
 
 /* --------------------------------------------------------------------------
-   下载新 exe：交给系统自带的 curl.exe，不再用 WinINet。
+   下载兜底：系统自带的 curl.exe（老系统没有就 PowerShell WebClient）。
 
-   为什么：Release 的 asset 直链在 github.com/.../releases/download/，会 302
-   跳到 objects.githubusercontent.com；这条链路和 api.github.com 完全不是一回事，
-   国内经常被拦/挂起，而 WinINet 的超时选项在部分环境根本不生效（实测能挂 30 秒）。
-   curl 自带 -L 跟随重定向、--connect-timeout / --max-time 硬超时、--retry 重试，
-   并且会读系统/环境代理设置，比 WinINet 可靠得多。老系统没有 curl 时退回
-   PowerShell 的 WebClient（Win7 起自带，也会自动跟随重定向）。
-
-   下完必须校验是 PE（MZ）且足够大 —— 防止把 403/404 错误页当 exe 覆盖自己。
+   只在 WinINet 主路径失败时才走这里。注意不能只写裸 "curl.exe" 让
+   CreateProcess 去搜 PATH：32 位进程的 System32 会被 WOW64 重定向到
+   SysWOW64，而 Windows 只随系统带了 64 位 curl.exe，x86 版会找不到。
+   所以先试系统目录全路径，再退回 PATH，最后才 PowerShell。
    -------------------------------------------------------------------------- */
 static int curl_download(const char *url,const wchar_t *dst){
-  DeleteFileW(dst);                       /* 上次失败的残file */
+  DeleteFileW(dst);
   wchar_t wurl[2048];
   if(MultiByteToWideChar(CP_UTF8,0,url,-1,wurl,2048)<=0) return 0;
 
-  /* 可选镜像前缀：国内连不上 github.com 时，用户可设环境变量 KIMIPET_MIRROR，
-     例如 https://ghproxy.net/ —— 程序会把它拼在 asset 直链前面。留空=直连。 */
+  /* 可选镜像前缀：用户可设环境变量 KIMIPET_MIRROR，留空 = 直连 */
   wchar_t mirror[512]=L"";
   GetEnvironmentVariableW(L"KIMIPET_MIRROR",mirror,512);
   wchar_t full[2048];
   if(mirror[0]) _snwprintf(full,2048,L"%ls%ls",mirror,wurl);
   else          wcscpy(full,wurl);
 
+  wchar_t sysdir[MAX_PATH]={0}, windir[MAX_PATH]={0};
+  GetSystemDirectoryW(sysdir,MAX_PATH);
+  GetWindowsDirectoryW(windir,MAX_PATH);
+  wchar_t curlPath[4][MAX_PATH];
+  _snwprintf(curlPath[0],MAX_PATH,L"%ls\\curl.exe",sysdir);
+  /* 32 位进程访问真实 System32 要写 Sysnative（System32 会被重定向到 SysWOW64） */
+  _snwprintf(curlPath[1],MAX_PATH,L"%ls\\Sysnative\\curl.exe",windir);
+  _snwprintf(curlPath[2],MAX_PATH,L"%ls\\System32\\curl.exe",windir);
+  wcscpy(curlPath[3],L"curl.exe");
+
   wchar_t cmd[4096];
   STARTUPINFOW si; memset(&si,0,sizeof si); si.cb=sizeof si;
-  PROCESS_INFORMATION pi; memset(&pi,0,sizeof pi);
+  PROCESS_INFORMATION pi;
+  BOOL started=FALSE;
 
-  _snwprintf(cmd,4096,
-    L"curl.exe -L -f -sS --retry 2 --connect-timeout 15 --max-time 180 "
-    L"-o \"%ls\" \"%ls\"", dst, full);
-
-  BOOL started=CreateProcessW(NULL,cmd,NULL,NULL,FALSE,
-                              CREATE_NO_WINDOW,NULL,NULL,&si,&pi);
+  for(int i=0;i<4 && !started;i++){
+    memset(&pi,0,sizeof pi);
+    _snwprintf(cmd,4096,
+      L"\"%ls\" -L -f -sS --retry 2 --connect-timeout 15 --max-time 180 "
+      L"-o \"%ls\" \"%ls\"", curlPath[i], dst, full);
+    started=CreateProcessW(NULL,cmd,NULL,NULL,FALSE,
+                           CREATE_NO_WINDOW,NULL,NULL,&si,&pi);
+  }
   if(!started){
-    /* 没有 curl.exe：PowerShell WebClient 兜底 */
+    /* 最后兜底：PowerShell。老 .NET Framework 默认不启用 TLS 1.2，
+       GitHub 要求 TLS 1.2，所以这里显式打开，否则一定握手失败。 */
+    memset(&pi,0,sizeof pi);
     _snwprintf(cmd,4096,
       L"powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "
       L"\"$ProgressPreference='SilentlyContinue'; "
+      L"[Net.ServicePointManager]::SecurityProtocol="
+      L"[Net.SecurityProtocolType]::Tls12; "
       L"(New-Object System.Net.WebClient).DownloadFile('%ls','%ls')\"",
       full,dst);
     started=CreateProcessW(NULL,cmd,NULL,NULL,FALSE,
                            CREATE_NO_WINDOW,NULL,NULL,&si,&pi);
-    if(!started){
-      DeleteFileW(dst);
-      return 0;
-    }
+    if(!started){ DeleteFileW(dst); return 0; }
   }
-  /* curl 自己有 --max-time，这里再兜一层，防止极端情况下永不返回 */
   DWORD wr=WaitForSingleObject(pi.hProcess,200000);
   DWORD code=1;
   if(wr==WAIT_OBJECT_0) GetExitCodeProcess(pi.hProcess,&code);
@@ -287,7 +301,7 @@ static int curl_download(const char *url,const wchar_t *dst){
   CloseHandle(pi.hProcess);
   if(code!=0){ DeleteFileW(dst); return 0; }
 
-  /* 校验 PE 头 + 合理体积（x86/x64 都是 400KB 量级，64KB 下限很宽松） */
+  /* 校验 PE 头 + 合理体积 */
   HANDLE hf=CreateFileW(dst,GENERIC_READ,FILE_SHARE_READ,NULL,
                         OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
   if(hf==INVALID_HANDLE_VALUE){ DeleteFileW(dst); return 0; }
@@ -302,13 +316,41 @@ static int curl_download(const char *url,const wchar_t *dst){
   return 1;
 }
 
+/* --------------------------------------------------------------------------
+   下载主路径：WinINet 直下。
+
+   v1.2 就是这么做的，用户实证能从 1.2 顺利升级到 1.3。1.3 那次「修卡顿」
+   把这段包进 20 秒看门狗，下载几百 KB 一旦超过 20 秒就被强行关闭句柄，
+   于是「检测得到更新、exe 下不下来」。现在下载不接看门狗：
+   reqSlot 传 NULL、不调 net_begin()，看门狗的 netActive 一直是 0。
+   -------------------------------------------------------------------------- */
+static int wininet_download(const char *url,const wchar_t *dst,DWORD *status){
+  DeleteFileW(dst);
+  char *data=NULL; int len=0; DWORD st=0;
+  int ok=http_get_ex(url,NULL,&data,&len,&st,NULL,UPD_DOWNLOAD_MS);
+  if(status) *status=st;
+  if(!ok||!data){ free(data); return 0; }
+  /* 下下来的是不是 PE：看 MZ 头 + 体积，防止把 403/404 网页当 exe 覆盖自己 */
+  if(len<65536 || (unsigned char)data[0]!='M' || (unsigned char)data[1]!='Z'){
+    free(data); DeleteFileW(dst); return 0;
+  }
+  int w=write_file_all(dst,(const unsigned char*)data,(size_t)len);
+  free(data);
+  if(!w){ DeleteFileW(dst); return 0; }
+  return 1;
+}
+
+static int download_exe(const char *url,const wchar_t *dst,DWORD *status){
+  if(wininet_download(url,dst,status)) return 1;   /* 主路径：v1.2 实证可用 */
+  return curl_download(url,dst);                    /* 兜底：curl / PowerShell */
+}
+
 /* 写一个 bat：等本进程结束 → 用新 exe 覆盖 → 启动 → 自删 */
 static int write_updater_bat(const wchar_t *bat,const wchar_t *src,const wchar_t *dst){
   DWORD pid=GetCurrentProcessId();
   wchar_t tmp[4096];
   _snwprintf(tmp,4096,
     L"@echo off\r\n"
-    L"chcp 65001 >nul\r\n"
     L":wait\r\n"
     L"tasklist /FI \"PID eq %lu\" 2>nul | find \"%lu\" >nul\r\n"
     L"if not errorlevel 1 (\r\n"
@@ -324,11 +366,14 @@ static int write_updater_bat(const wchar_t *bat,const wchar_t *src,const wchar_t
     L"start \"\" \"%ls\"\r\n"
     L"del \"%%~f0\"\r\n",
     pid,pid,src,dst,src,dst,src,dst);
-  int k=WideCharToMultiByte(CP_UTF8,0,tmp,-1,NULL,0,NULL,NULL);
+  /* bat 由 cmd.exe 按 OEM 代码页逐字节解析。以前写 UTF-8 再靠 chcp 65001
+     撑着，中文 Windows（GBK）下路径会乱码 → copy 失败 → 覆盖没做成。
+     改成系统 OEM 代码页编码、不加 chcp，中文路径才能被正确读到。 */
+  int k=WideCharToMultiByte(CP_OEMCP,0,tmp,-1,NULL,0,NULL,NULL);
   if(k<=0) return 0;
   unsigned char *b=(unsigned char*)malloc((size_t)k);
   if(!b) return 0;
-  WideCharToMultiByte(CP_UTF8,0,tmp,-1,(char*)b,k,NULL,NULL);
+  WideCharToMultiByte(CP_OEMCP,0,tmp,-1,(char*)b,k,NULL,NULL);
   int ok=write_file_all(bat,b,(size_t)k-1);
   free(b);
   return ok;
@@ -418,7 +463,7 @@ static DWORD WINAPI upd_thread(LPVOID arg){
 
   char *json=NULL; int jlen=0; DWORD st=0;
   net_begin(c);
-  int ok=http_get_ex(api,UPD_GH_HEADERS,&json,&jlen,&st,&c->hReq);
+  int ok=http_get_ex(api,UPD_GH_HEADERS,&json,&jlen,&st,&c->hReq,UPD_TIMEOUT_MS);
   net_end(c);
 
   if(!ok){
@@ -509,18 +554,21 @@ static DWORD WINAPI upd_thread(LPVOID arg){
   _snwprintf(c->bat,1200,L"%lsKimiPet_update_%lu.bat",tmpdir,GetCurrentProcessId());
   wcscpy(c->dst,self);
 
-  /* 下载交给外部 curl（自带超时与重定向），不套 WinINet 的看门狗计时 ——
-     那个 20 秒硬超时是给 API 小请求用的，下载几百 KB 可能更久。 */
-  int dl=curl_download(c->url,c->src);
+  /* 下载：主路径 WinINet 直下（v1.2 实证可用），curl 仅兜底。
+     绝不能在这里调 net_begin() —— 20 秒看门狗是给 API 小请求的，
+     1.3 那次把下载也包进去，结果 exe 永远下不下来。 */
+  DWORD dlStatus=0;
+  int dl=download_exe(c->url,c->src,&dlStatus);
   if(!dl){
     c->stage=UPD_ERR_DOWNLOAD;
     _snwprintf(c->msg,600,
-      L"下载新版本失败。\n\n"
-      L"GitHub 的下载域名（github.com → objects.githubusercontent.com）"
-      L"和检查更新用的 API 不是同一条链路，国内网络经常只通 API 那一条。\n"
+      L"下载新版本失败（HTTP %lu）。\n\n"
+      L"检查更新用的 API 能通，但下载 exe 没成；常见原因是代理/杀软拦截，"
+      L"或 Release 附件还没传好。\n\n"
       L"可以重试；仍不行就到 Releases 页面手动下载，或用随附的 "
       L"KimiPetUpdater.bat 手动升级。\n\n"
-      L"旧文件没有被改动，本程序也不会退出。");
+      L"旧文件没有被改动，本程序也不会退出。",
+      (unsigned long)dlStatus);
     DeleteFileW(c->src);
     upd_notify(c); return 0;
   }
