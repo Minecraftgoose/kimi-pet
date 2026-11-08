@@ -2,6 +2,8 @@
 
 一个会自己东张西望的小Kimi，住在你的桌面上。
 
+> 想先看看它长什么样、能干什么？打开 [docs/index.html](docs/index.html)（单文件，离线也能看）。
+
 ---
 <div align="center"><img width="137" height="137" alt="图片" src="https://github.com/user-attachments/assets/bdbb817d-cf9e-4abf-8092-ee0d0b525b55" /></div>
 
@@ -15,6 +17,7 @@
 ```
 README.md  LICENSE  AGENTS.md  .gitignore
 .github/workflows/release.yml
+docs/index.html          # 介绍页（单文件 HTML）
 src/
   ├─ pet.h       公共声明：类型、常量、全局变量 extern、函数原型
   ├─ util.c      数学工具、UTF-8 ↔ 宽字符转换、文件读写、文本/颜色解析

@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kimi小圆球 · 住在桌面上的小伙伴</title>
+<meta name="description" content="一个会东张西望、会睡觉、会陪你呼吸的 Windows 桌面小圆球。配置驱动、模组可挂、单文件 exe。">
+<style>
+  :root{
+    --accent:#4a86d8;
+    --ink:#1b2b45;
+    --sub:#5a6b85;
+    --line:#dfe8f6;
+    --card:#ffffff;
+    --bg:#f4f8ff;
+    --glow:#dceaff;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    color:var(--ink);
+    background:
+      radial-gradient(900px 520px at 50% -10%,var(--glow),transparent 70%),
+      var(--bg);
+    line-height:1.75;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+
+  /* ---------- hero ---------- */
+  .hero{text-align:center;padding:64px 0 44px}
+  .badge{
+    display:inline-block;font-size:13px;letter-spacing:.04em;
+    padding:5px 14px;border:1px solid var(--line);border-radius:999px;
+    background:var(--card);color:var(--sub);
+  }
+  .stage{width:230px;height:230px;margin:26px auto 6px;position:relative}
+  svg{width:100%;height:100%;overflow:visible;cursor:pointer;user-select:none;
+      filter:drop-shadow(0 18px 26px rgba(52,94,158,.22))}
+  #ballGroup{transform-box:view-box;transform-origin:100px 100px;
+             animation:breathe 10s ease-in-out infinite}
+  #petWrap{transform-box:view-box;transform-origin:100px 100px}
+  #petWrap.poke{animation:poke .38s cubic-bezier(.3,1.6,.5,1)}
+  .eyes{transform-box:view-box;transform-origin:100px 94px;
+        animation:blink 7s ease-in-out infinite}
+  .pupils{animation:glance 9s ease-in-out infinite}
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+  @keyframes poke{0%{transform:scale(1)}35%{transform:scale(1.1,.9)}100%{transform:scale(1)}}
+  @keyframes blink{0%,90%,100%{transform:scaleY(1)}94%{transform:scaleY(.09)}}
+  @keyframes glance{
+    0%,22%{transform:translateX(0)}
+    38%,56%{transform:translateX(4px)}
+    72%,90%{transform:translateX(-4px)}
+    100%{transform:translateX(0)}
+  }
+  .hint{font-size:13px;color:var(--sub);margin-top:2px}
+  .hint b{color:var(--accent);font-weight:600}
+  h1{font-size:42px;line-height:1.2;margin:20px 0 10px;letter-spacing:.02em}
+  .lead{font-size:17px;color:var(--sub);margin:0 auto 24px;max-width:560px}
+  .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .btn{
+    display:inline-block;padding:11px 24px;border-radius:12px;font-size:15px;font-weight:600;
+    border:1px solid var(--line);background:var(--card);color:var(--ink);
+    transition:transform .15s,box-shadow .15s;
+  }
+  .btn:hover{transform:translateY(-2px);text-decoration:none;box-shadow:0 8px 20px rgba(52,94,158,.14)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .tiny{font-size:12px;color:var(--sub);margin-top:16px;opacity:.85}
+
+  /* ---------- sections ---------- */
+  section{padding:34px 0}
+  h2{font-size:25px;margin:0 0 6px;letter-spacing:.01em}
+  .sub{color:var(--sub);margin:0 0 24px;font-size:15px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:20px 22px;box-shadow:0 4px 18px rgba(43,78,133,.05);
+  }
+  .card .ico{font-size:22px;line-height:1}
+  .card h3{font-size:16px;margin:10px 0 6px}
+  .card p{margin:0;font-size:14px;color:var(--sub)}
+  .card code,.cfg code,table code{
+    background:rgba(74,134,216,.10);color:var(--accent);
+    padding:1px 6px;border-radius:5px;font-size:.92em;
+  }
+
+  table{width:100%;border-collapse:collapse;background:var(--card);
+        border:1px solid var(--line);border-radius:16px;overflow:hidden;font-size:15px}
+  th,td{text-align:left;padding:13px 18px;border-bottom:1px solid var(--line)}
+  th{background:rgba(74,134,216,.06);font-size:13px;color:var(--sub);font-weight:600}
+  tr:last-child td{border-bottom:0}
+  td:first-child{white-space:nowrap;font-weight:600}
+
+  .cfg{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+  pre{
+    margin:0;background:#12203a;color:#dce8fb;border-radius:16px;
+    padding:20px 22px;overflow-x:auto;font-size:13px;line-height:1.7;
+    font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  }
+  pre .k{color:#8fc0ff}
+  pre .v{color:#ffd79a}
+  pre .c{color:#7d92b5}
+  .notes p{font-size:14px;color:var(--sub);margin:0 0 12px}
+
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px}
+  .chip{font-size:12px;padding:5px 12px;border:1px solid var(--line);
+        border-radius:999px;background:var(--card);color:var(--sub);
+        font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+
+  .dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+  .dl a{display:block;background:var(--card);border:1px solid var(--line);
+        border-radius:14px;padding:16px 18px;font-size:14px}
+  .dl a:hover{text-decoration:none;border-color:var(--accent)}
+  .dl strong{display:block;font-size:15px;margin-bottom:2px;color:var(--ink)}
+  .dl span{color:var(--sub);font-size:13px}
+
+  footer{border-top:1px solid var(--line);margin-top:30px;padding:26px 0 48px;
+         font-size:13px;color:var(--sub)}
+  footer p{margin:0 0 6px}
+
+  @media (max-width:720px){
+    .hero{padding:40px 0 28px}
+    h1{font-size:32px}
+    .stage{width:190px;height:190px}
+    .cfg{grid-template-columns:1fr}
+    th,td{padding:11px 12px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    #ballGroup,.eyes,.pupils,#petWrap.poke{animation:none}
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--ink:#e8f0fc;--sub:#9db0cc;--line:#2a3a54;--card:#18263e;
+          --bg:#101a2c;--glow:#1d3358}
+    pre{background:#0c1628}
+    .card,.dl a,table,.badge,.btn{box-shadow:none}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero wrap">
+  <div class="badge">v1.4.3 · Windows 桌面小宠物 · 单个 exe</div>
+
+  <div class="stage">
+    <svg id="pet" viewBox="0 0 200 200" role="img" aria-label="会呼吸、会眨眼的小圆球，点击可切换配色">
+      <defs>
+        <radialGradient id="ballGrad" cx="34%" cy="27%" r="78%">
+          <stop id="s0" offset="0%"   stop-color="#a9cdf6"/>
+          <stop id="s1" offset="32%"  stop-color="#8cb9f0"/>
+          <stop id="s2" offset="62%"  stop-color="#6ca4e8"/>
+          <stop id="s3" offset="84%"  stop-color="#5a95e0"/>
+          <stop id="s4" offset="100%" stop-color="#4a86d8"/>
+        </radialGradient>
+      </defs>
+      <g id="petWrap">
+        <g id="ballGroup">
+          <circle cx="100" cy="100" r="80" fill="url(#ballGrad)"/>
+          <ellipse cx="76" cy="50" rx="27" ry="13" fill="#fff" opacity=".20"
+                   transform="rotate(-24 76 50)"/>
+          <ellipse cx="62" cy="116" rx="10" ry="5.5" fill="#ff8fa8" opacity=".30"/>
+          <ellipse cx="138" cy="116" rx="10" ry="5.5" fill="#ff8fa8" opacity=".30"/>
+          <g class="eyes">
+            <ellipse cx="76" cy="94" rx="13.5" ry="16.5" fill="#fff"/>
+            <ellipse cx="124" cy="94" rx="13.5" ry="16.5" fill="#fff"/>
+            <g class="pupils">
+              <circle cx="77" cy="95" r="6.6" fill="#1b2b45"/>
+              <circle cx="125" cy="95" r="6.6" fill="#1b2b45"/>
+              <circle cx="79.2" cy="92.4" r="2.1" fill="#fff" opacity=".9"/>
+              <circle cx="127.2" cy="92.4" r="2.1" fill="#fff" opacity=".9"/>
+            </g>
+          </g>
+          <path d="M91 126 Q100 134 109 126" fill="none" stroke="#22456f"
+                stroke-width="3" stroke-linecap="round" opacity=".72"/>
+        </g>
+      </g>
+    </svg>
+    <div class="hint">点一下我换件衣服 · 当前 <b id="colorName">淡蓝</b></div>
+  </div>
+
+  <h1>kimi小圆球</h1>
+  <p class="lead">
+    一个会自己东张西望的小Kimi，住在你的桌面上。<br>
+    不占任务栏、不弹窗、不联网也能好好待着；想让它变什么样，全写在一个 ini 里。
+  </p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Minecraftgoose/kimi-pet/releases">去下载 exe</a>
+    <a class="btn" href="https://github.com/Minecraftgoose/kimi-pet">看看源码</a>
+  </div>
+  <p class="tiny">这一页是单个 HTML 文件，断网、双击、直接看，不加载任何外部资源。</p>
+</header>
+
+<main class="wrap">
+
+  <section>
+    <h2>它会什么</h2>
+    <p class="sub">没有窗口边框，没有设置向导。所有脾气都藏在右键菜单和那个 ini 里。</p>
+    <div class="grid">
+      <div class="card"><div class="ico">👀</div><h3>东张西望</h3>
+        <p>眼神会自己飘，也能设成 <code>follow = 1</code> 一直跟着鼠标看。点它一下会鼓一鼓，连点 5 次它会眯起眼瞪你几秒。</p></div>
+      <div class="card"><div class="ico">😴</div><h3>会睡觉</h3>
+        <p>鼠标静止 3 分钟，上下眼睑慢慢往中间合，留一条缝，还有很轻的呼吸起伏。睡着后连点 3 下叫醒；想让它睡踏实，可以设成鼠标怎么动都不醒。</p></div>
+      <div class="card"><div class="ico">🌬️</div><h3>陪你呼吸</h3>
+        <p>球放大 = 吸气、缩小 = 呼气、<strong>不动 = 屏息</strong>，眼睛跟着睁合，缓入缓出一直循环。等长 / 长呼气 / 慢一点，点一下就写好节奏。</p></div>
+      <div class="card"><div class="ico">🎨</div><h3>颜色自己加</h3>
+        <p>出厂 8 色。往 <code>[colors]</code> 里加一行，右键菜单立刻多一项，最多 32 个；可以写 HSL、单个基色，也能把 5 层渐变全定死。</p></div>
+      <div class="card"><div class="ico">🎀</div><h3>能戴挂件</h3>
+        <p><code>mod\</code> 里一个 ini 一个模组。眼镜挂在眼睛上、兔耳猫耳从头后面长出来，会跟着球一起缩放、鼓起、歪头。</p></div>
+      <div class="card"><div class="ico">⚙️</div><h3>配置说了算</h3>
+        <p>菜单里的选项由 <code>KimiPet.ini</code> 驱动。改完点「重新加载配置」立刻生效；软件写回时只动那一行，你的注释和顺序都留着。</p></div>
+      <div class="card"><div class="ico">📏</div><h3>大小只认 ini</h3>
+        <p>出厂 60px，滚轮和菜单都改不了，只有 <code>size</code> 说了算。<code>size_max</code> 想写多大写多大，离谱的球也可以有。</p></div>
+      <div class="card"><div class="ico">🔄</div><h3>会自己更新</h3>
+        <p>右键「检查更新…」查 GitHub 最新 Release，后台线程下载、校验、覆盖、重启；球全程照常动，配置文件和模组一个字不动。</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>怎么逗它</h2>
+    <p class="sub">就这几下，没有别的按钮了。</p>
+    <table>
+      <tr><th>你做什么</th><th>它怎么回</th></tr>
+      <tr><td>左键拖动</td><td>换个地方待着</td></tr>
+      <tr><td>左键单击</td><td>鼓一下</td></tr>
+      <tr><td>连点 5 次</td><td>生气了，眯着眼瞪你几秒</td></tr>
+      <tr><td>3 分钟不动</td><td>闭眼睡觉，留一条缝，轻轻呼吸</td></tr>
+      <tr><td>睡着时连点 3 下</td><td>醒来（1.2 秒内点满，停太久要重数）</td></tr>
+      <tr><td>右键</td><td>颜色 / 模组 / 置顶 / 跟随鼠标 / 开机自启 / 呼吸训练 / 呼吸节奏 / 检查更新… / 重新加载配置 / 打开配置文件… / 关于 / 退出</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>一切都写在配置文件里</h2>
+    <p class="sub">第一次启动会在 exe 旁边长出 <code>KimiPet.ini</code>（UTF-8）。删掉它，下次启动就是出厂设置。</p>
+    <div class="cfg">
+<pre><span class="c"># KimiPet.ini</span>
+[<span class="k">general</span>]
+topmost      = <span class="v">1</span>      <span class="c">; 始终置顶</span>
+follow       = <span class="v">0</span>      <span class="c">; 眼神跟随鼠标</span>
+autorun      = <span class="v">0</span>      <span class="c">; 开机自启</span>
+size         = <span class="v">60</span>     <span class="c">; 直径 px，只在这儿改</span>
+size_min     = <span class="v">60</span>
+size_max     = <span class="v">420</span>    <span class="c">; 想要多大的球都行</span>
+color        = <span class="v">淡蓝</span>
+
+sleep        = <span class="v">1</span>      <span class="c">; 允许睡觉</span>
+sleep_delay  = <span class="v">180</span>    <span class="c">; 3 分钟，写 2 就能马上看</span>
+sleep_wake_on_move = <span class="v">1</span>
+
+breathe          = <span class="v">0</span>    <span class="c">; 呼吸训练</span>
+breathe_in       = <span class="v">5</span>    <span class="c">; 吸气：放大</span>
+breathe_hold_in  = <span class="v">0</span>    <span class="c">; 吸末屏息：不动</span>
+breathe_out      = <span class="v">5</span>    <span class="c">; 呼气：缩小</span>
+breathe_hold_out = <span class="v">0</span>    <span class="c">; 呼末屏息：不动</span>
+
+[<span class="k">colors</span>]
+<span class="c">; 加一行，菜单就多一项</span>
+淡蓝 = <span class="v">#4a86d8,#5a95e0,#6ca4e8,#8cb9f0,#a9cdf6</span>
+天蓝 = <span class="v">201,65,57</span>        <span class="c">; 色相,饱和度,亮度</span>
+朱红 = <span class="v">#ff0000</span>             <span class="c">; 基色，明暗自动推</span>
+
+[<span class="k">mods</span>]
+兔耳 = <span class="v">1</span>                <span class="c">; 1 戴上 / 0 摘下</span></pre>
+      <div class="notes">
+        <p><strong>老配置不用手动补。</strong> 新版加了新选项，启动时会自己补一行带注释的进去，你原有的值和注释一个都不动。</p>
+        <p><strong>写回很老实。</strong> 软件只替换那一行的值，注释、空行、行序原样保留；中文颜色名也不会乱码。</p>
+        <p><strong>没权限也能用。</strong> exe 放在 Program Files 这类目录时，配置自动改到 <code>%APPDATA%\KimiPet\</code>，右键「关于」里能看到实际路径。</p>
+        <p><strong>呼吸训练只是节律引导。</strong> 不提供含屏息的具体方案，不写疗效、不监测指标，也不诊断或治疗任何问题；觉得不舒服就关掉，按自己习惯呼吸就好。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>挂件挂在哪儿</h2>
+    <p class="sub">球体上有一组锚点，坐标以「球半径 = 12」为单位。挂在上面的图元会跟着球缩放、鼓起、歪头；眼睛那两个还会跟着眼神动。</p>
+    <div class="chips">
+      <span class="chip">body</span><span class="chip">eye_l</span><span class="chip">eye_r</span>
+      <span class="chip">eyes</span><span class="chip">mouth</span><span class="chip">head</span>
+      <span class="chip">ear_l</span><span class="chip">ear_r</span>
+      <span class="chip">foot_l</span><span class="chip">foot_r</span>
+    </div>
+    <p class="sub" style="margin-top:16px">
+      <code>mod\</code> 里一个 <code>.ini</code> 就是一个模组，支持 circle / ring / ellipse / rect / line / arc / triangle 七种图元，
+      每个都能调偏移、旋转、缩放、透明度和颜色，<code>layer = back</code> 还能画到球后面去。
+      出厂内置 <strong>兔耳</strong>、<strong>猫耳（白）</strong>、<strong>锚点调试</strong>，默认全关，外观不变；
+      以后新增的内置模组，老用户更新后也会自动补齐，不会覆盖你自己改过的文件。
+    </p>
+  </section>
+
+  <section>
+    <h2>拿去玩</h2>
+    <p class="sub">Releases 页面里附件是平铺的，不打包 zip。</p>
+    <div class="dl">
+      <a href="https://github.com/Minecraftgoose/kimi-pet/releases"><strong>KimiPet_x64.exe</strong><span>64 位系统用这个</span></a>
+      <a href="https://github.com/Minecraftgoose/kimi-pet/releases"><strong>KimiPet_x86.exe</strong><span>32 位系统用这个</span></a>
+      <a href="https://github.com/Minecraftgoose/kimi-pet/releases"><strong>KimiPetUpdater.bat</strong><span>老系统手动升级用</span></a>
+      <a href="https://github.com/Minecraftgoose/kimi-pet/releases"><strong>SHA256SUMS.txt</strong><span>校验下载文件</span></a>
+    </div>
+  </section>
+
+</main>
+
+<footer class="wrap">
+  <p>MIT License · Copyright (c) 2026 Minecraftgoose</p>
+  <p>这一页只介绍软件能做什么。呼吸训练是节律引导，不诊断、不治疗、不监测任何指标，也不替代医疗建议。</p>
+</footer>
+
+<script>
+(function(){
+  /* 出厂 8 色：淡蓝是 5 层渐变原值，其余按 HSL 推 5 层明暗 */
+  var palettes = [
+    {name:"淡蓝", stops:["#a9cdf6","#8cb9f0","#6ca4e8","#5a95e0","#4a86d8"], accent:"#4a86d8"},
+    {name:"天蓝", h:201,s:65,l:57}, {name:"靛蓝", h:230,s:65,l:57},
+    {name:"紫",   h:266,s:65,l:57}, {name:"青",   h:186,s:65,l:57},
+    {name:"绿",   h:146,s:65,l:57}, {name:"粉",   h:337,s:65,l:57},
+    {name:"橙",   h:36, s:65,l:57}
+  ];
+  function hsl(h,s,l){ return "hsl("+h+","+s+"%,"+l+"%)"; }
+  function resolve(p){
+    if(p.stops) return p.stops;
+    var d=[-22,-11,0,10,20];
+    return d.map(function(x){ return hsl(p.h,p.s,Math.max(12,Math.min(92,p.l+x))); });
+  }
+  var idx=0, stops=[], nameEl=document.getElementById("colorName");
+  for(var i=0;i<5;i++) stops.push(document.getElementById("s"+i));
+  function apply(){
+    var p=palettes[idx], c=resolve(p);
+    /* 光从左上打过来：数组由亮到暗 */
+    for(var i=0;i<5;i++) stops[i].setAttribute("stop-color",c[i]);
+    var accent=p.accent||c[3];
+    document.documentElement.style.setProperty("--accent",accent);
+    document.documentElement.style.setProperty("--glow",c[0]);
+    nameEl.textContent=p.name;
+  }
+  var pet=document.getElementById("pet"), wrap=document.getElementById("petWrap");
+  pet.addEventListener("click",function(){
+    idx=(idx+1)%palettes.length;
+    apply();
+    wrap.classList.remove("poke");
+    void wrap.getBBox();           /* 强制重排，连点也能重播动画 */
+    wrap.classList.add("poke");
+  });
+  apply();
+})();
+</script>
+</body>
+</html>
