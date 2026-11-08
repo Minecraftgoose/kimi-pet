@@ -47,10 +47,10 @@ extern double g_simNow;
 
 /* ---------------- 版本 / 仓库（自动更新用） ---------------- */
 #define KP_VERSION_MAJOR 1
-#define KP_VERSION_MINOR 3
-#define KP_VERSION_PATCH 3
-#define KP_VERSION_STR   "v1.3.3"
-#define KP_VERSION_W    L"v1.3.3"
+#define KP_VERSION_MINOR 4
+#define KP_VERSION_PATCH 0
+#define KP_VERSION_STR   "v1.4"
+#define KP_VERSION_W    L"v1.4"
 #define KP_REPO_OWNER    "Minecraftgoose"
 #define KP_REPO_NAME     "kimi-pet"
 #define KP_REPO_OWNER_W  L"Minecraftgoose"
@@ -77,6 +77,11 @@ typedef struct {
   int      sleep;                   /* 1 = 允许睡觉（出厂默认），0 = 永远不睡 */
   double   sleep_delay;             /* 鼠标静止多少秒后入睡 */
   int      sleep_wake_on_move;      /* 1 = 鼠标一动就醒（默认），0 = 只能点 3 下叫醒 */
+  int      breathe;                 /* 1 = 开启呼吸训练（四相无限循环，不限时长） */
+  double   breathe_in;              /* 吸气秒数：球放大、眼睛睁开 */
+  double   breathe_hold_in;         /* 吸气末屏息秒数：球保持最大，0 = 不屏息 */
+  double   breathe_out;             /* 呼气秒数：球缩小、眼睛闭上 */
+  double   breathe_hold_out;        /* 呼气末屏息秒数：球保持最小，0 = 不屏息 */
   double   size, size_min, size_max;
   wchar_t  color[NAME_LEN];
   int      colorIdx;
@@ -143,6 +148,7 @@ extern const double SHADOW_DY;
 extern const double SHADOW_ALPHA;
 extern const double ANGRY_LID;
 extern const double LID_SLANT;
+extern const double BREATHE_AMP;      /* 呼吸训练时球半径相对变化幅度，±12% */
 extern const double JITTER;
 extern const double TURN_K;
 extern const double ROLL;
@@ -177,6 +183,11 @@ extern double g_sleepAmt;
 extern int    g_sleepTaps;
 extern double g_sleepTap;
 extern double g_breath;
+/* 呼吸训练：无屏息、无时长限制的两相循环（状态与渲染在 render.c） */
+extern double g_trainAmt;             /* 0 = 呼尽（最小、眼闭） ~ 1 = 吸满（最大、眼睁） */
+extern double g_trainLid;             /* 训练产生的闭眼量 */
+extern double g_trainT0;              /* 本轮循环起点（毫秒），-1e9 = 未启动 */
+extern int    g_trainPhase;           /* 0 吸气 / 1 吸末屏息 / 2 呼气 / 3 呼末屏息 */
 extern int    g_x, g_y;
 extern int    g_follow, g_topmost;
 extern POINT  g_mouse;
@@ -278,6 +289,7 @@ void   apply_color(int idx);
 double eyeW(void);
 double eyeH(void);
 void   step(double now,double dt);
+void   breathe_reset(void);              /* 开关切换 / 重载配置时重置相位 */
 void   note_mouse_move(int x,int y);
 int    sleep_tap(double now);
 double eyeLid(double now);

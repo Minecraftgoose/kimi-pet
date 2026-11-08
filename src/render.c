@@ -49,6 +49,10 @@ const int    SLEEP_WAKE_TAPS=3;
 /* 睡着后鼠标要累计移动这么多像素才算「动了」，免得手抖一下就把它吵醒 */
 const double SLEEP_WAKE_MOVE=14.0;
 
+/* 呼吸训练：球半径在 1±BREATHE_AMP 之间起伏。默认 5 秒吸 + 5 秒呼，
+   约每分钟 6 次；不做屏息相、不设轮次或总时长，一直循环到用户关掉。 */
+const double BREATHE_AMP=0.12;
+
 double eyeW(void){ return BASE_W*EYE_SCALE; }
 double eyeH(void){ return eyeW()*EYE_ASPECT; }
 
@@ -76,7 +80,22 @@ int    g_mouseSeen=0;
 double g_sleepAmt=0;      /* 0 清醒 ~ 1 熟睡，平滑过渡 */
 int    g_sleepTaps=0;     /* 睡着后被点的次数 */
 double g_sleepTap=-1e9;
-double g_breath=0;        /* 睡着时的呼吸起伏 */
+double g_breath=0;        /* 球半径缩放增量：睡着时是轻微起伏，训练时是大起伏 */
+double g_trainAmt=0;      /* 0 呼尽 ~ 1 吸满 */
+double g_trainLid=0;      /* 训练闭眼量（与睡觉共用同一套上下眼睑） */
+double g_trainT0=-1e9;    /* 循环起点；-1e9 表示未启动 */
+int    g_trainPhase=3;    /* 0 吸气 / 1 吸末屏息 / 2 呼气 / 3 呼末屏息 */
+
+void breathe_reset(void){
+  g_trainT0=-1e9; g_trainAmt=0; g_trainLid=0; g_trainPhase=3;
+  if(!g_cfg.breathe) g_breath=0;
+}
+
+/* smoothstep：两端速度为 0，球不会在吸/呼切换时突然跳一下 */
+static double smoothstep(double u){
+  u=clampd(u,0.0,1.0);
+  return u*u*(3.0-2.0*u);
+}
 
 int g_x=0, g_y=0;
 int g_follow=0;
@@ -133,14 +152,47 @@ void step(double now,double dt){
   }
   sq = clampd(pressV*JELLY_K, -JELLY_MAX, JELLY_MAX);
 
-  /* 睡觉：鼠标静够了就慢慢合眼，醒了就快点睁开 */
+  /* ---- 呼吸训练：四相无限循环，不限时长、不设轮次 ----
+       放大 = 吸气（眼睁开）   不动（最大）= 吸气末屏息
+       缩小 = 呼气（眼闭上）   不动（最小）= 呼气末屏息
+     两段屏息秒数写 0 就自动退化成纯两相；屏息相里球大小与眼睛都保持端点，
+     所以「球不放大也不缩小」就是屏息。smoothstep 让相与相之间速度连续，
+     不会在切换瞬间跳一下。
+     训练期间每帧刷新 g_lastMove，所以不会练到一半自动睡着。 */
+  if(g_cfg.breathe){
+    if(g_trainT0<-1e8) g_trainT0=now;       /* 刚开启：从「呼尽」起步 */
+    double tin  = g_cfg.breathe_in;
+    double thin = g_cfg.breathe_hold_in;
+    double tout = g_cfg.breathe_out;
+    double thout= g_cfg.breathe_hold_out;
+    double T = tin+thin+tout+thout;
+    double ph = fmod((now-g_trainT0)/1000.0, T);
+    double a; int phase;
+    if(ph < tin){                          /* 吸气：缓入放大 */
+      a = smoothstep(ph/tin); phase=0;
+    }else if(ph < tin+thin){               /* 吸满屏息：保持最大 */
+      a = 1.0;                  phase=1;
+    }else if(ph < tin+thin+tout){          /* 呼气：缓出缩小 */
+      a = 1.0-smoothstep((ph-tin-thin)/tout); phase=2;
+    }else{                                 /* 呼尽屏息：保持最小 */
+      a = 0.0;                  phase=3;
+    }
+    g_trainPhase = phase;
+    g_trainAmt = a;
+    g_trainLid = (1.0-a)*SLEEP_CLOSE*0.96;  /* 留一条缝，跟睡觉的观感一致 */
+    g_breath   = (a-0.5)*2.0*BREATHE_AMP;
+    g_lastMove = now;
+  }else{
+    if(g_trainT0>-1e8) breathe_reset();     /* 刚关掉：立刻回到静止大小 */
+    g_breath = g_sleepAmt * sin(now/1000.0*(2.0*M_PI/4.0)) * 0.012;
+  }
+
+  /* 睡觉：鼠标静够了就慢慢合眼，醒了就快点睁开（训练时 g_lastMove 一直被刷新） */
   double sleepTarget = (g_cfg.sleep && (now - g_lastMove) > g_cfg.sleep_delay*1000.0) ? 1.0 : 0.0;
   double sleepTau = sleepTarget>g_sleepAmt ? 0.45 : 0.20;   /* 入睡慢，醒来快 */
   g_sleepAmt += (sleepTarget-g_sleepAmt)*(1.0-exp(-ds/sleepTau));
   if(g_sleepAmt<1e-4) g_sleepAmt=0;
   if(g_sleepAmt>0.9999) g_sleepAmt=1;
-  /* 呼吸：只在睡着时有，幅度很小，纯装饰 */
-  g_breath = g_sleepAmt * sin(now/1000.0*(2.0*M_PI/4.0)) * 0.012;
 
   double target = (now<rageUntil)?1.0:0.0;
   double tau = target?0.10:0.05;
@@ -184,7 +236,7 @@ void step(double now,double dt){
   gazeVY += ((gazeTY+my-gazeY)*st - gazeVY*dp)*ds;
   gazeX  += gazeVX*ds; gazeY += gazeVY*ds;
 
-  if(g_sleepAmt<0.3 && now>blinkNext){
+  if(g_sleepAmt<0.3 && !g_cfg.breathe && now>blinkNext){
     if(now-blinkT0>blinkDur){ blinkT0=now; blinkDur=rnd(150,230); }
     blinkNext = now + 1000.0/(0.05+BLINK*0.6)*rnd(.55,1.6);
   }
@@ -297,12 +349,15 @@ static void draw_eye(int side,double lid){
 
   double al = (angryMood && rage>0.01) ? ANGRY_LID*rage : 0.0;
   double sl = (angryMood && rage>0.01) ? LID_SLANT*(1.0-al*0.35) : 0.0;
-  /* 睡着：上眼睑压下来、下眼睑抬上去，中间留一条缝 */
+  /* 闭眼：睡觉和呼吸训练共用同一套上下眼睑，中间留一条缝。
+     谁的量大听谁的，避免两套动画互相打架。 */
   double sleepLid = g_sleepAmt*SLEEP_CLOSE;
-  double lm = lid>al?lid:al;
-  if(sleepLid>lm){ lm=sleepLid; sl=0.0; }
+  double closeLid = sleepLid>g_trainLid?sleepLid:g_trainLid;
+  double rawLid   = lid>al?lid:al;
+  double lm = rawLid>closeLid?rawLid:closeLid;
+  if(closeLid>0.001 && closeLid>=rawLid) sl=0.0;
   double cut = -ry + eh*lm;
-  double cutBot = ry - eh*sleepLid;             /* 下眼睑 */
+  double cutBot = ry - eh*closeLid;             /* 下眼睑 */
   double yOut=cut-sl, yIn=cut+sl;
   double ya = (side==0)? yOut : yIn;     /* 局部 x = -rx-1 端 */
   double yb = (side==0)? yIn  : yOut;    /* 局部 x = +rx+1 端 */
@@ -326,7 +381,7 @@ static void draw_eye(int side,double lid){
       double dcap=hypot(lx, ly-(-flat+2.0*flat*hh))-r;
       double dline = -((lx-axL)*nx + (ly-ayL)*ny);
       double d = (dcap>dline)?dcap:dline;
-      if(sleepLid>0.001){                       /* 下眼睑：线以下的切掉 */
+      if(closeLid>0.001){                       /* 下眼睑：线以下的切掉 */
         double db = ly - cutBot;
         if(db>d) d=db;
       }

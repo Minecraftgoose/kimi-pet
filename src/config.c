@@ -37,6 +37,15 @@ const char *DEFAULT_CFG_TEXT =
 "# 移动鼠标时：1 = 立刻醒（默认）/ 0 = 鼠标动没用，只能点球 3 下叫醒\r\n"
 "sleep_wake_on_move = 1\r\n"
 "\r\n"
+"# 呼吸训练：1 开 / 0 关。球放大 = 吸气、缩小 = 呼气、不动 = 屏息，一直循环，不限时长\r\n"
+"breathe = 0\r\n"
+"# 四相秒数：吸气 / 吸末屏息 / 呼气 / 呼末屏息。屏息写 0 就不做那一相\r\n"
+"# 右键菜单「呼吸节奏」里的三个预设会帮你写 in / out 这两个，屏息保留你自己设的值\r\n"
+"breathe_in = 5\r\n"
+"breathe_hold_in = 0\r\n"
+"breathe_out = 5\r\n"
+"breathe_hold_out = 0\r\n"
+"\r\n"
 "[colors]\r\n"
 "# 想加颜色就自己加一行，右键菜单的「颜色」里会自动多一项（最多 32 个）。三种写法：\r\n"
 "#   名字 = 色相,饱和度,亮度          HSL，例：红 = 0,70,55\r\n"
@@ -112,6 +121,8 @@ void cfg_reset(void){
   g_cfg.topmost=1; g_cfg.follow=0; g_cfg.autorun=0;
   g_cfg.sleep=1; g_cfg.sleep_delay=180.0;      /* 3 分钟不动就睡 */
   g_cfg.sleep_wake_on_move=1;
+  g_cfg.breathe=0; g_cfg.breathe_in=5.0; g_cfg.breathe_out=5.0;
+  g_cfg.breathe_hold_in=0.0; g_cfg.breathe_hold_out=0.0;
   g_cfg.size=60.0; g_cfg.size_min=60.0; g_cfg.size_max=420.0;
 }
 
@@ -142,6 +153,16 @@ void cfg_normalize(void){
   if(!(g_cfg.sleep_delay>0.0)) g_cfg.sleep_delay=180.0;
   if(g_cfg.sleep_delay<0.5)    g_cfg.sleep_delay=0.5;
   if(g_cfg.sleep_delay>86400.0) g_cfg.sleep_delay=86400.0;
+  /* 呼吸四相：in / out 无效值回 5 秒并夹在 1~30（防止写 0 让 fmod 除零）；
+     hold 两段 0 是合法值（= 不屏息），只夹上限、负数归 0。 */
+  if(!(g_cfg.breathe_in >0.0))  g_cfg.breathe_in =5.0;
+  if(!(g_cfg.breathe_out>0.0))  g_cfg.breathe_out=5.0;
+  g_cfg.breathe_in =clampd(g_cfg.breathe_in ,1.0,30.0);
+  g_cfg.breathe_out=clampd(g_cfg.breathe_out,1.0,30.0);
+  if(!(g_cfg.breathe_hold_in >=0.0))  g_cfg.breathe_hold_in =0.0;
+  if(!(g_cfg.breathe_hold_out>=0.0))  g_cfg.breathe_hold_out=0.0;
+  g_cfg.breathe_hold_in =clampd(g_cfg.breathe_hold_in ,0.0,30.0);
+  g_cfg.breathe_hold_out=clampd(g_cfg.breathe_hold_out,0.0,30.0);
   if(!(g_cfg.size>0.0))     g_cfg.size=60.0;
   g_cfg.size=clampd(g_cfg.size,g_cfg.size_min,g_cfg.size_max);
   if(g_nColors>0){
@@ -210,6 +231,11 @@ void cfg_parse(const char *text){
                                       g_cfg.sleep_delay = atof(val);
     else if(cieq(key,"sleep_wake_on_move")||cieq(key,"wake_on_move"))
                                       g_cfg.sleep_wake_on_move = parse_bool(val);
+    else if(cieq(key,"breathe"))      g_cfg.breathe     = parse_bool(val);
+    else if(cieq(key,"breathe_in"))      g_cfg.breathe_in      = atof(val);
+    else if(cieq(key,"breathe_hold_in")) g_cfg.breathe_hold_in = atof(val);
+    else if(cieq(key,"breathe_out"))     g_cfg.breathe_out     = atof(val);
+    else if(cieq(key,"breathe_hold_out"))g_cfg.breathe_hold_out= atof(val);
     else if(cieq(key,"size"))         g_cfg.size      = atof(val);
     else if(cieq(key,"size_min"))     g_cfg.size_min  = atof(val);
     else if(cieq(key,"size_max"))     g_cfg.size_max  = atof(val);
@@ -325,6 +351,14 @@ static const CFG_FIELD CFG_FIELDS[] = {
    L"鼠标静止多少秒后闭上眼睡觉，秒为单位"},
   {L"general",L"sleep_wake_on_move",L"1",
    L"移动鼠标时：1 = 立刻醒（默认）/ 0 = 鼠标动没用，只能点球 3 下叫醒"},
+  {L"general",L"breathe",L"0",
+   L"呼吸训练：1 开 / 0 关。球放大 = 吸气、缩小 = 呼气、不动 = 屏息，一直循环，不限时长"},
+  {L"general",L"breathe_in",L"5",
+   L"四相秒数：吸气 / 吸末屏息 / 呼气 / 呼末屏息。屏息写 0 就不做那一相"},
+  {L"general",L"breathe_hold_in",L"0",
+   L"右键菜单「呼吸节奏」里的三个预设会帮你写 in / out 这两个，屏息保留你自己设的值"},
+  {L"general",L"breathe_out",L"5",NULL},
+  {L"general",L"breathe_hold_out",L"0",NULL},
 };
 #define N_CFG_FIELDS (int)(sizeof(CFG_FIELDS)/sizeof(CFG_FIELDS[0]))
 
@@ -544,6 +578,7 @@ void cfg_load(void){
 /* 菜单里「重新加载配置」 */
 void reload_cfg(void){
   size_t len=0;
+  breathe_reset();                         /* 改了节奏就从「呼尽」重新起步 */
   mod_dir_init();                          /* 顺带补齐这一版新增的内置模组 */
   unsigned char *raw=read_file_all(g_cfgPath,&len);
   g_nModSw=0;

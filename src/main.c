@@ -17,9 +17,21 @@ HMENU g_menu=NULL;
 #define ID_RELOAD   1007
 #define ID_OPENCFG  1008
 #define ID_CHECKUPD 1009
+#define ID_BREATHE  1010
+#define ID_BREATHE_P0 1011            /* 呼吸节奏预设 +0 ~ +2 */
 #define ID_COLOR0   1100                  /* +0 ~ MAX_COLORS-1 */
 #define ID_MOD0     1200                  /* +0 ~ MAX_MODS-1   */
 #define ID_OPENMOD  1240
+
+/* 呼吸节奏预设：点一下把 in / out 两个数写回 ini。
+   屏息（breathe_hold_in / breathe_hold_out）不在这里动 —— 那是用户自己
+   在 ini 里定的，预设只负责「吸多久、呼多久」。 */
+static const struct { const wchar_t *label; double in, out; } BREATHE_PRESETS[] = {
+  { L"等长 5-5",   5.0, 5.0 },
+  { L"长呼气 4-6", 4.0, 6.0 },
+  { L"慢一点 6-6", 6.0, 6.0 },
+};
+#define N_BREATHE_PRESETS (int)(sizeof(BREATHE_PRESETS)/sizeof(BREATHE_PRESETS[0]))
 
 /* ---------------- 菜单 / 自启 ---------------- */
 void set_autorun(int on){
@@ -64,6 +76,18 @@ static void popup_menu(int x,int y){
   AppendMenuW(g_menu,MF_STRING,ID_TOPMOST,L"始终置顶");
   AppendMenuW(g_menu,MF_STRING,ID_FOLLOW,L"跟随鼠标");
   AppendMenuW(g_menu,MF_STRING,ID_AUTORUN,L"开机自启");
+  AppendMenuW(g_menu,MF_STRING,ID_BREATHE,L"呼吸训练");
+  { HMENU br=CreatePopupMenu();
+    for(int i=0;i<N_BREATHE_PRESETS;i++)
+      AppendMenuW(br,MF_STRING,ID_BREATHE_P0+i,BREATHE_PRESETS[i].label);
+    /* 当前 in/out 正好等于某个预设就打勾；自己写了别的数则三个都不勾 */
+    for(int i=0;i<N_BREATHE_PRESETS;i++){
+      int hit = fabs(g_cfg.breathe_in -BREATHE_PRESETS[i].in )<0.01 &&
+                fabs(g_cfg.breathe_out-BREATHE_PRESETS[i].out)<0.01;
+      CheckMenuItem(br,ID_BREATHE_P0+i,hit?MF_CHECKED:MF_UNCHECKED);
+    }
+    AppendMenuW(g_menu,MF_POPUP,(UINT_PTR)br,L"呼吸节奏");
+  }
   AppendMenuW(g_menu,MF_SEPARATOR,0,NULL);
   AppendMenuW(g_menu,MF_STRING,ID_RECENTER,L"重新居中");
   AppendMenuW(g_menu,MF_SEPARATOR,0,NULL);
@@ -76,6 +100,7 @@ static void popup_menu(int x,int y){
   CheckMenuItem(g_menu,ID_TOPMOST,g_topmost    ?MF_CHECKED:MF_UNCHECKED);
   CheckMenuItem(g_menu,ID_FOLLOW, g_follow     ?MF_CHECKED:MF_UNCHECKED);
   CheckMenuItem(g_menu,ID_AUTORUN,g_cfg.autorun?MF_CHECKED:MF_UNCHECKED);
+  CheckMenuItem(g_menu,ID_BREATHE,g_cfg.breathe?MF_CHECKED:MF_UNCHECKED);
   for(int i=0;i<g_nColors;i++)
     CheckMenuItem(g_menu,ID_COLOR0+i,(i==g_cfg.colorIdx)?MF_CHECKED:MF_UNCHECKED);
   for(int i=0;i<g_nMods;i++)
@@ -212,6 +237,11 @@ static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l){
       set_autorun(g_cfg.autorun);
       save_flag(L"autorun",g_cfg.autorun);
       break;
+    case ID_BREATHE:
+      g_cfg.breathe=!g_cfg.breathe;
+      breathe_reset();                       /* 从「呼尽」起步，别让球瞬移 */
+      save_flag(L"breathe",g_cfg.breathe);
+      break;
     case ID_RELOAD:
       reload_cfg();
       break;
@@ -252,6 +282,17 @@ static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l){
     case ID_QUIT:
       if(g_menu){ DestroyMenu(g_menu); g_menu=NULL; }
       PostQuitMessage(0);
+      break;
+    default:
+      if(id>=ID_BREATHE_P0 && id<ID_BREATHE_P0+N_BREATHE_PRESETS){
+        int i=id-ID_BREATHE_P0;
+        wchar_t v[32];
+        g_cfg.breathe_in  = BREATHE_PRESETS[i].in;
+        g_cfg.breathe_out = BREATHE_PRESETS[i].out;
+        _snwprintf(v,32,L"%g",g_cfg.breathe_in);  cfg_set(L"general",L"breathe_in", v);
+        _snwprintf(v,32,L"%g",g_cfg.breathe_out); cfg_set(L"general",L"breathe_out",v);
+        breathe_reset();                    /* 新节奏从「呼尽」重新起步 */
+      }
       break;
     }
     return 0;
