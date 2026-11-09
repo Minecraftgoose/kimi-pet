@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 set CFLAGS=-O2 -mwindows
-set LIBS=-lgdi32 -luser32 -ladvapi32 -lwinmm -lshell32 -lwininet -lm
+set LIBS=-lgdi32 -luser32 -ladvapi32 -lwinmm -lshell32 -lwininet -lwinhttp -lm
 
 if not exist "..\..\exe" mkdir "..\..\exe"
 
@@ -16,11 +16,11 @@ if errorlevel 1 (
 )
 
 echo   -^> KimiPet_x64.exe ^(64-bit^)
-gcc %CFLAGS% -o ..\..\exe\KimiPet_x64.exe util.c config.c mod.c render.c update.c main.c icon.res %LIBS%
+gcc %CFLAGS% -o ..\..\exe\KimiPet_x64.exe util.c config.c mod.c render.c update.c winhttpdl.c main.c icon.res %LIBS%
 if errorlevel 1 goto :fail
 
 echo   -^> KimiPet_x86.exe ^(32-bit^)
-gcc %CFLAGS% -o ..\..\exe\KimiPet_x86.exe util.c config.c mod.c render.c update.c main.c icon.res %LIBS%
+gcc %CFLAGS% -o ..\..\exe\KimiPet_x86.exe util.c config.c mod.c render.c update.c winhttpdl.c main.c icon.res %LIBS%
 if errorlevel 1 goto :fail
 
 del /q icon.res

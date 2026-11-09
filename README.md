@@ -25,6 +25,7 @@ src/
   ├─ mod.c       锚点、图元（SDF 绘制）、mod\ 目录里的模组
   ├─ render.c    球体状态、位图缓冲、运动与绘制
   ├─ update.c    检查更新：查 GitHub Release、下载、写覆盖脚本
+  ├─ winhttpdl.c WinHTTP 下载兜底（独立翻译单元，避开 wininet.h 类型冲突）
   ├─ main.c      窗口、右键菜单、鼠标钩子、开机自启、入口
   ├─ icon.rc  KimiPet.ico
   └─ build.sh  build.bat
@@ -86,7 +87,14 @@ cd src && sh build.sh        # 产物写到 ../../exe（仓库外）
 - 响应体超过 **16MB** 一律判为失败。以前达到上限只是 `break`，截断的 PE 仍会通过 MZ 校验并覆盖自己，能把安装写坏
 - 没网、代理拦截、下载到的不是 exe，都只提示、不改动旧文件
 
-**下载主路径是 WinINet 直下** —— 和 v1.2 能顺利升级到 1.3 时用的是同一套链路。旧版成功的关键是「不设接收超时、不被短看门狗掐」，新版保留了这份宽容（接收间隔 5 分钟），只是补上了连接超时独立化和防永久阻塞的硬兜底。主路径失败才依次兜底：系统目录里的 curl（含 32 位进程用的 `Sysnative` 路径）→ PATH 里的 curl → **`certutil.exe`**（Win7+ 系统自带，走系统 HTTP 栈，不受老 .NET 限制）→ PowerShell WebClient。
+**下载主路径是 WinINet 直下** —— 和 v1.2 能顺利升级到 1.3 时用的是同一套链路。旧版成功的关键是「不设接收超时、不被短看门狗掐」，新版保留了这份宽容（接收间隔 5 分钟），只是补上了连接超时独立化和防永久阻塞的硬兜底。
+
+主路径失败后依次兜底：
+
+1. **WinHTTP（纯 C，Win7 原生系统组件）** —— 显式请求 TLS 1.2，不依赖任何外部 exe 或第三方库，也不会被火绒当作可疑命令行下载拦掉。`winhttpdl.c` 是独立翻译单元：`wininet.h` 与 `winhttp.h` 在 mingw-w64 下 typedef 冲突，不能放在同一个 `.c` 里。链接参数是 **`-lwinhttp`**，不是 `-lws2_32`（本程序不用裸 Winsock，WinHTTP 已封装 socket、HTTP 头、Content-Length 和 302 重定向）。
+2. 系统目录里的 `curl.exe`（含 32 位进程用的 `Sysnative` 路径）→ PATH 里的 `curl.exe` → **`certutil.exe`**（Win7+ 自带，走系统 HTTP 栈）→ PowerShell WebClient。
+
+> 编译相关：`build.sh` / `build.bat` 的 `LIBS` 同时列了 `-lwininet -lwinhttp`。代码里设了 `_WIN32_WINNT 0x0601`，产物是普通 Win32 PE，不依赖新版 SDK 运行时。Win7 SP1 想真正握上 TLS 1.2 仍需 KB3140245；`WinHttpSetOption` 失败时程序会忽略并继续用系统默认，不会因为一个 option 就放弃下载。
 
 **老系统特别注意**：PowerShell 2.0 / .NET 3.5 的 `SecurityProtocolType` 只有 `Ssl3`、`Tls` 两个成员，写 `[Net.SecurityProtocolType]::Tls12` 会直接抛 `PropertyAssignmentException`，下载还没开始就失败。所以 TLS 1.2 用数值 `3072` 经 `[Enum]::ToObject` 设置，并整段包在 `try/catch` 里 —— 赋值失败也继续尝试。手动 `KimiPetUpdater.bat` 同样按 curl → certutil → PowerShell 顺序走。
 

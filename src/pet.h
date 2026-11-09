@@ -312,6 +312,14 @@ int    json_str(const char *json,const char *key,char *out,int outn);
 int    find_asset_url(const char *json,const char *want,char *out,int outn);
 void   do_update(HWND h);
 
+#ifndef RENDER_TEST
+/* ---- winhttpdl.c：WinHTTP 兜底（独立翻译单元，避开 wininet.h 类型冲突） ---- */
+int    winhttp_download(const char *url,const wchar_t *dst,DWORD *status,
+                        volatile LONG *abort,volatile PVOID *reqSlot,
+                        DWORD connectMs,DWORD recvMs,DWORD maxBody);
+void   winhttp_abort(volatile PVOID *reqSlot);
+#endif
+
 /* ---- main.c：窗口 / 自启 ---- */
 void   set_autorun(int on);
 int    get_autorun(void);

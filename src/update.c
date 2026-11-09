@@ -7,7 +7,13 @@
 
    下载主路径用 WinINet 直下 —— 这是 v1.2 实证能走通的链路。曾经把它换掉，
    又在「修卡顿」时把下载包进 20 秒看门狗，结果检测得到更新、exe 永远下不下来。
-   现在：看门狗只管 API 小请求，下载自己走宽松超时；curl 只作兜底。        */
+   现在：看门狗按阶段分阈值，下载走宽松超时。
+
+   下载兜底链：WinINet（主）→ WinHTTP（纯 C 系统组件，显式请求 TLS 1.2）
+              → curl.exe / certutil.exe / PowerShell（外部工具）。
+   WinHTTP 这一层专为 Win7 而加：系统 Schannel 常未启用 TLS 1.2，而外部
+   curl.exe 在 Win7 上不存在、certutil/PowerShell 又容易被安全软件拦。
+   WinHTTP 不依赖任何外部 exe，也不需要 libcurl。                       */
 
 /* 目标 exe 文件名：64 位 / 32 位各一份 */
 const char *upd_asset_name(void){
@@ -82,6 +88,10 @@ int find_asset_url(const char *json,const char *want,char *out,int outn){
 }
 
 #ifndef RENDER_TEST
+/* 注意：wininet.h（pet.h 引入）与 winhttp.h 在 mingw-w64 下 TYPEDEF 冲突
+   （winhttp.h 自己就注明 "Yes, these values contradict wininet.h"）。
+   WinHTTP 实现放在独立的 winhttpdl.c，那个翻译单元不 include wininet.h。 */
+
 /* ==========================================================================
    Windows 实现
 
@@ -148,8 +158,9 @@ typedef struct { wchar_t msg[300]; int isDownload; } UPD_TMO_MSG;
    只关父句柄 hInet 在部分实现里唤不醒 InternetReadFile。用 Interlocked
    交换取所有权，保证工作线程和看门狗不会重复关闭同一个句柄。 */
 typedef struct {
-  volatile PVOID inet;
-  volatile PVOID url;
+  volatile PVOID inet;       /* WinINet 父句柄 */
+  volatile PVOID url;        /* WinINet 请求句柄 */
+  volatile PVOID whReq;      /* WinHTTP 请求句柄（兜底链路用） */
   volatile LONG  abort;      /* 看门狗置位，读循环每轮检查 */
 } HTTP_SLOTS;
 
@@ -408,8 +419,15 @@ static int wininet_download(const char *url,const wchar_t *dst,DWORD *status,
 
 static int download_exe(const char *url,const wchar_t *dst,DWORD *status,
                         HTTP_SLOTS *slots){
-  if(wininet_download(url,dst,status,slots)) return 1; /* 主路径：v1.2 实证可用 */
-  /* 兜底也吃同一个 abort 标志，超时能被立刻掐掉 */
+  if(wininet_download(url,dst,status,slots)) return 1; /* 主路径不变 */
+  /* 看门狗已判定超时就别再起下一条链路 */
+  if(slots && READ(&slots->abort)) return 0;
+  /* Win7 纯 C 兜底：WinHTTP，显式请求 TLS 1.2，不依赖任何外部 exe。
+     超时常量由本文件统一传入，避免两个翻译单元各存一份。 */
+  if(winhttp_download(url,dst,status,
+                      slots?&slots->abort:NULL,slots?&slots->whReq:NULL,
+                      UPD_CONNECT_MS,UPD_DOWNLOAD_MS,UPD_MAX_BODY)) return 1;
+  /* 外部工具兜底也吃同一个 abort 标志，超时能被立刻掐掉 */
   return curl_download(url,dst,slots?&slots->abort:NULL);
 }
 
@@ -466,10 +484,14 @@ static DWORD WINAPI upd_watch(LPVOID arg){
           /* 先置 abort（读循环每轮检查），再关 hUrl（唤醒阻塞的读），
              最后关父句柄。顺序不能反：只关 hInet 在部分实现里唤不醒。 */
           EXCHANGE(&c->slots.abort,1);
+          /* 三条链路各自持有不同的句柄，都要取回所有权再关：
+             WinINet 的 hUrl / hInet，以及 WinHTTP 的 hRequest。
+             只关其中一个，阻塞读可能仍在别的链路里醒不过来。 */
           PVOID r=InterlockedExchangePointer(&c->slots.url,NULL);
           if(r) InternetCloseHandle((HINTERNET)r);
           r=InterlockedExchangePointer(&c->slots.inet,NULL);
           if(r) InternetCloseHandle((HINTERNET)r);
+          winhttp_abort(&c->slots.whReq);   /* 独立模块负责关闭自己的句柄 */
           /* 用独立的小消息体，不引用 ctx —— 工作线程可能永远醒不过来 */
           UPD_TMO_MSG *m=(UPD_TMO_MSG*)calloc(1,sizeof *m);
           if(m){
@@ -477,8 +499,9 @@ static DWORD WINAPI upd_watch(LPVOID arg){
             if(isDl)
               _snwprintf(m->msg,300,
                 L"下载新版本超时（等了 5 分钟没完成），已自动放弃。\n\n"
+                L"已试过 WinINet、WinHTTP 和命令行工具三条链路。\n"
                 L"旧文件没有被改动，球也不会卡住；可以稍后重试，"
-                L"或用随附的 KimiPetUpdater.bat 手动升级。");
+                L"或用随附的 KimiPetUpdater.bat 手动升级（浏览器下载 + 自动拾取）。");
             else
               _snwprintf(m->msg,300,
                 L"检查更新超时（30 秒没响应），已自动放弃。\n\n"
@@ -504,8 +527,13 @@ static void upd_cleanup(UPD_CTX *c){
     c->watch=NULL;
   }
   CloseHandle(c->ev);
+  /* 看门狗判定超时时已经清过 g_updBusy，好让用户立刻重试。若本轮工作线程
+     晚一点才从阻塞读里醒过来（WinHTTP 关句柄在部分实现里不能立刻唤醒，
+     要等它自己的接收超时），这里绝不能再清一次 —— 那会把【新一轮】检查
+     更新的 busy 标志误清零，导致连点保护失效、两个 ctx 并存。 */
+  int timedOut = READ(&c->timedOut);
   free(c);
-  InterlockedExchange(&g_updBusy,0);
+  if(!timedOut) InterlockedExchange(&g_updBusy,0);
 }
 
 /* 注意：这里必须等到主线程真的处理完（用户把对话框点掉）才能释放 ctx。

@@ -7,7 +7,7 @@ mkdir -p "$OUT"
 echo "产物目录：$OUT"
 
 CFLAGS="-O2 -mwindows"
-LIBS="-lgdi32 -luser32 -ladvapi32 -lwinmm -lshell32 -lwininet -lm"
+LIBS="-lgdi32 -luser32 -ladvapi32 -lwinmm -lshell32 -lwininet -lwinhttp -lm"
 
 WR_CP=""; WR_X64=""; WR_X86=""
 if command -v x86_64-w64-mingw32-windres >/dev/null 2>&1; then
@@ -32,7 +32,7 @@ echo "  -> 编译图标资源"
 $WR_X64 $WR_CP icon.rc -O coff -o icon_x64.res
 $WR_X86 $WR_CP icon.rc -O coff -o icon_x86.res
 
-SRCS="util.c config.c mod.c render.c update.c main.c"
+SRCS="util.c config.c mod.c render.c update.c winhttpdl.c main.c"
 
 echo "  -> KimiPet_x64.exe（64 位）"
 x86_64-w64-mingw32-gcc $CFLAGS -o "$OUT/KimiPet_x64.exe" $SRCS icon_x64.res $LIBS
