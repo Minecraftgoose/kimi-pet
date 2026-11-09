@@ -2,7 +2,7 @@
 
 一个会自己东张西望的小Kimi，住在你的桌面上。
 
-> 想先看看它长什么样、能干什么？打开 [docs/index.html](docs/index.html)（单文件，离线也能看）。
+> 想先看看它长什么样、能干什么？打开 [docs/index.html](docs/index.html)（单文件，离线也能看）。页面里那只球用的是**桌面版的 Canvas 网页原型**——球面投影的眼睛、果冻形变、眨眼、生气都在，下面还能点色点换衣服。
 
 ---
 <div align="center"><img width="137" height="137" alt="图片" src="https://github.com/user-attachments/assets/bdbb817d-cf9e-4abf-8092-ee0d0b525b55" /></div>

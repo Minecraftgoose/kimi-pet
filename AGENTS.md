@@ -89,7 +89,8 @@ KimiPet_源码与程序
 - **需求有歧义时别自己挑一个解释闷头做**：先按上下文还原，仍拿不准就问一句。曾把「不动代表屏息」读成「不设屏息相」，把该做的四相循环砍成了两相，下一轮才补回来。
 - **bat 里定位文件别用带引号的通配符，也别依赖 `pushd`**：`for %%f in ("%~dp0*.exe")` 拿到的是字面字符串，不展开；而 `pushd` 在部分 cmd / wine 环境会直接失败（实测 `PUSHD FAILED`）。可靠写法是 `dir /b /o-d "路径\*.exe" 2^>nul` 配 `for /f "delims="`，再自己拼全路径、`%%~ff` 取绝对路径。曾经因此找不到旧文件名 `MiniPet_x64.exe`。
 - **所有 `.bat` 必须纯 ASCII**：注释、`echo`、`title`、`REM` 一律英文，不写中文、不用全角标点，也不要 `chcp 65001`（部分 cmd 代码页下 bat 文件按 ANSI 解析，一个中文就可能整段失效）。交付前用「字节 ≥ 128 计数为 0」校验，包括 `KimiPetUpdater.bat` 和 `build.bat`。**程序运行时生成的覆盖 bat 同样适用**：用 `CP_OEMCP` 编码、不加 chcp，否则中文路径在 GBK cmd 下乱码、`copy` 静默失败。
-- **版本号显示带 `v` 前缀**（`v1.4.3`），比较用数字宏不影响。
+- **`docs/index.html` 里的小圆球用桌面版 Canvas 网页原型，别再手搓 SVG**：球面投影眼睛、果冻形变、眨眼、按住注视、连点 5 次生气、5 层渐变都要按原型来。原型原本是全屏 canvas，嵌进介绍页必须做四处局部化：收进 `.stage` 容器、resize 用舞台 rect、指针坐标换成相对 canvas 的局部坐标、去掉铺满全屏的白色 `fillRect` 改成 `clearRect` 透明。`touch-action:none` 只能加在 `.stage` 上，加到 `body` 会让整页没法滚动。换色走独立色点，别占用球本身的点击（那是「逗它」）。
+- **版本号显示带 `v` 前缀**（`v1.4.4`），比较用数字宏不影响。
 - **发版必须打 tag** 才会触发 Release；只 push 分支只会构建不发布。
 - **Release 附件平铺、不打包 zip**；必须有独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`（「检查更新」按架构名找），外加 `KimiPetUpdater.bat` 供老版本用户手动升级。
 - **老 .NET 没有 `Tls12` 具名枚举**：PowerShell 2.0 / .NET 3.5 的 `SecurityProtocolType` 只有 `Ssl3`、`Tls`，写 `[Net.SecurityProtocolType]::Tls12` 会在赋值阶段抛 `PropertyAssignmentException`（报错「可能的枚举值为 Ssl3、Tls」），下载还没开始就死。用数值 `3072` 经 `[Enum]::ToObject([Net.SecurityProtocolType],3072)` 设置并包 try/catch；兜底顺序里优先 Win7+ 自带的 `certutil.exe`（走系统 HTTP 栈，不受 .NET 版本限制）。

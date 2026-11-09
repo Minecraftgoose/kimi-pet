@@ -32,33 +32,37 @@
   .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
 
   /* ---------- hero ---------- */
-  .hero{text-align:center;padding:64px 0 44px}
+  .hero{text-align:center;padding:56px 0 44px}
   .badge{
     display:inline-block;font-size:13px;letter-spacing:.04em;
     padding:5px 14px;border:1px solid var(--line);border-radius:999px;
     background:var(--card);color:var(--sub);
   }
-  .stage{width:230px;height:230px;margin:26px auto 6px;position:relative}
-  svg{width:100%;height:100%;overflow:visible;cursor:pointer;user-select:none;
-      filter:drop-shadow(0 18px 26px rgba(52,94,158,.22))}
-  #ballGroup{transform-box:view-box;transform-origin:100px 100px;
-             animation:breathe 10s ease-in-out infinite}
-  #petWrap{transform-box:view-box;transform-origin:100px 100px}
-  #petWrap.poke{animation:poke .38s cubic-bezier(.3,1.6,.5,1)}
-  .eyes{transform-box:view-box;transform-origin:100px 94px;
-        animation:blink 7s ease-in-out infinite}
-  .pupils{animation:glance 9s ease-in-out infinite}
-  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
-  @keyframes poke{0%{transform:scale(1)}35%{transform:scale(1.1,.9)}100%{transform:scale(1)}}
-  @keyframes blink{0%,90%,100%{transform:scaleY(1)}94%{transform:scaleY(.09)}}
-  @keyframes glance{
-    0%,22%{transform:translateX(0)}
-    38%,56%{transform:translateX(4px)}
-    72%,90%{transform:translateX(-4px)}
-    100%{transform:translateX(0)}
+  /* 舞台只占这一小块；原型原本是全屏 canvas，这里收进容器里，
+     页面其余部分照常滚动、点击链接都不受影响。 */
+  .stage{
+    width:300px;height:300px;margin:18px auto 0;position:relative;
+    touch-action:none;user-select:none;-webkit-user-select:none;
+    cursor:pointer;
   }
+  .stage canvas{display:block;width:100%;height:100%}
   .hint{font-size:13px;color:var(--sub);margin-top:2px}
   .hint b{color:var(--accent);font-weight:600}
+  .swatches{
+    display:flex;gap:9px;justify-content:center;flex-wrap:wrap;
+    margin:12px 0 0;
+  }
+  .swatches button{
+    width:22px;height:22px;padding:0;border-radius:50%;cursor:pointer;
+    border:2px solid var(--card);
+    box-shadow:0 0 0 1px var(--line);
+    transition:transform .15s,box-shadow .15s;
+  }
+  .swatches button:hover{transform:scale(1.15)}
+  .swatches button.on{
+    box-shadow:0 0 0 2px var(--accent);
+    transform:scale(1.12);
+  }
   h1{font-size:42px;line-height:1.2;margin:20px 0 10px;letter-spacing:.02em}
   .lead{font-size:17px;color:var(--sub);margin:0 auto 24px;max-width:560px}
   .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
@@ -123,63 +127,33 @@
   footer p{margin:0 0 6px}
 
   @media (max-width:720px){
-    .hero{padding:40px 0 28px}
+    .hero{padding:38px 0 28px}
     h1{font-size:32px}
-    .stage{width:190px;height:190px}
+    .stage{width:240px;height:240px}
     .cfg{grid-template-columns:1fr}
     th,td{padding:11px 12px}
-  }
-  @media (prefers-reduced-motion:reduce){
-    #ballGroup,.eyes,.pupils,#petWrap.poke{animation:none}
   }
   @media (prefers-color-scheme:dark){
     :root{--ink:#e8f0fc;--sub:#9db0cc;--line:#2a3a54;--card:#18263e;
           --bg:#101a2c;--glow:#1d3358}
     pre{background:#0c1628}
     .card,.dl a,table,.badge,.btn{box-shadow:none}
+    .swatches button{border-color:#18263e}
   }
 </style>
 </head>
 <body>
 
 <header class="hero wrap">
-  <div class="badge">v1.4.3 · Windows 桌面小宠物 · 单个 exe</div>
+  <div class="badge">v1.4.4 · Windows 桌面小宠物 · 单个 exe</div>
 
-  <div class="stage">
-    <svg id="pet" viewBox="0 0 200 200" role="img" aria-label="会呼吸、会眨眼的小圆球，点击可切换配色">
-      <defs>
-        <radialGradient id="ballGrad" cx="34%" cy="27%" r="78%">
-          <stop id="s0" offset="0%"   stop-color="#a9cdf6"/>
-          <stop id="s1" offset="32%"  stop-color="#8cb9f0"/>
-          <stop id="s2" offset="62%"  stop-color="#6ca4e8"/>
-          <stop id="s3" offset="84%"  stop-color="#5a95e0"/>
-          <stop id="s4" offset="100%" stop-color="#4a86d8"/>
-        </radialGradient>
-      </defs>
-      <g id="petWrap">
-        <g id="ballGroup">
-          <circle cx="100" cy="100" r="80" fill="url(#ballGrad)"/>
-          <ellipse cx="76" cy="50" rx="27" ry="13" fill="#fff" opacity=".20"
-                   transform="rotate(-24 76 50)"/>
-          <ellipse cx="62" cy="116" rx="10" ry="5.5" fill="#ff8fa8" opacity=".30"/>
-          <ellipse cx="138" cy="116" rx="10" ry="5.5" fill="#ff8fa8" opacity=".30"/>
-          <g class="eyes">
-            <ellipse cx="76" cy="94" rx="13.5" ry="16.5" fill="#fff"/>
-            <ellipse cx="124" cy="94" rx="13.5" ry="16.5" fill="#fff"/>
-            <g class="pupils">
-              <circle cx="77" cy="95" r="6.6" fill="#1b2b45"/>
-              <circle cx="125" cy="95" r="6.6" fill="#1b2b45"/>
-              <circle cx="79.2" cy="92.4" r="2.1" fill="#fff" opacity=".9"/>
-              <circle cx="127.2" cy="92.4" r="2.1" fill="#fff" opacity=".9"/>
-            </g>
-          </g>
-          <path d="M91 126 Q100 134 109 126" fill="none" stroke="#22456f"
-                stroke-width="3" stroke-linecap="round" opacity=".72"/>
-        </g>
-      </g>
-    </svg>
-    <div class="hint">点一下我换件衣服 · 当前 <b id="colorName">淡蓝</b></div>
+  <div class="stage" id="stage">
+    <canvas id="petCanvas" role="img"
+      aria-label="会眨眼、会东张西望的小圆球：点一下鼓一鼓，按住会盯着你看，连点五次会生气"></canvas>
   </div>
+  <div class="hint">点它鼓一下 · 按住盯着你看 · 连点 5 次会生气</div>
+  <div class="swatches" id="swatches" aria-label="切换配色"></div>
+  <div class="hint">换件衣服 · 当前 <b id="colorName">淡蓝</b></div>
 
   <h1>kimi小圆球</h1>
   <p class="lead">
@@ -310,40 +284,323 @@ breathe_hold_out = <span class="v">0</span>    <span class="c">; 呼末屏息：
 
 <script>
 (function(){
-  /* 出厂 8 色：淡蓝是 5 层渐变原值，其余按 HSL 推 5 层明暗 */
-  var palettes = [
-    {name:"淡蓝", stops:["#a9cdf6","#8cb9f0","#6ca4e8","#5a95e0","#4a86d8"], accent:"#4a86d8"},
-    {name:"天蓝", h:201,s:65,l:57}, {name:"靛蓝", h:230,s:65,l:57},
-    {name:"紫",   h:266,s:65,l:57}, {name:"青",   h:186,s:65,l:57},
-    {name:"绿",   h:146,s:65,l:57}, {name:"粉",   h:337,s:65,l:57},
-    {name:"橙",   h:36, s:65,l:57}
-  ];
-  function hsl(h,s,l){ return "hsl("+h+","+s+"%,"+l+"%)"; }
-  function resolve(p){
-    if(p.stops) return p.stops;
-    var d=[-22,-11,0,10,20];
-    return d.map(function(x){ return hsl(p.h,p.s,Math.max(12,Math.min(92,p.l+x))); });
+'use strict';
+/* =========================================================================
+   小圆球绘制：桌面版的网页原型（Canvas 2D）。
+   球面投影的眼睛、果冻形变、眨眼、生气、按住注视，行为与参数都按原型保留。
+   为嵌进介绍页做了四处局部化：
+     1. canvas 收进 .stage 容器，不再 fixed 全屏；
+     2. resize 用舞台尺寸，S 系数按舞台放大一点，避免球显得太小；
+     3. 指针坐标换成相对 canvas 的局部坐标；
+     4. 去掉原型里铺满全屏的白色 fillRect —— 改成透明，让页面背景透出来。
+   ========================================================================= */
+const stage=document.getElementById('stage');
+const cv=document.getElementById('petCanvas'), ctx=cv.getContext('2d');
+const rand=(a,b)=>a+Math.random()*(b-a);
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+
+let W=0,H=0,DPR=1,S=6;
+function resize(){
+  DPR=Math.max(1,Math.min(Math.round(window.devicePixelRatio||1),3));
+  const r=stage.getBoundingClientRect();
+  W=r.width;H=r.height;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  /* 原型是 0.44（球占短边 44%，全屏时留白很多）；收进 300px 舞台后
+     调成 0.56，球看着才跟页面其它内容分量相当。 */
+  S=clamp(Math.round(Math.min(W,H)*0.56/24),3,26);
+}
+window.addEventListener('resize',resize);resize();
+
+const sx=x=>cx0+x*S, sy=y=>cy0+y*S;
+let ES=S;
+const ex_=x=>cx0+x*ES, ey_=y=>cy0+y*ES;
+let cx0=0, cy0=0;
+
+/* ---------------- 外观 ---------------- */
+/* 中心深、边缘浅。5 层正好对应 ini 里「从暗到亮」的渐变写法。 */
+const SKIN={core:'#4a86d8',in1:'#5a95e0',in2:'#6ca4e8',edge:'#8cb9f0',rim:'#a9cdf6'};
+const CFG={
+  bodySize:24, baseW:5, scale:.53, eyeAspect:2.24,
+  eyeGap:2.1, eyeY:-3, eyeRound:1,
+  eyeMove:3.4, eyeMoveY:.62, range:.60, speed:.45, blink:.87,
+  pressPop:.11, pressHold:.03, popGrowMs:230, popHoldMs:250, popGrowStiff:100,
+  jellyK:.05, jellyMax:.07,
+  shadow:true, shadowScale:1.0, shadowDX:.10, shadowDY:.14, shadowAlpha:.30,
+  angryLid:.43, lidSlant:1.1, jitter:.72, turnK:1.8, roll:1.6
+};
+const eyeW=()=>CFG.baseW*CFG.scale;
+const eyeH=()=>eyeW()*CFG.eyeAspect;
+
+/* ---------------- 球面投影 ---------------- */
+let sharedRot=0;
+function updateSharedRot(gx,gy){
+  const R=CFG.bodySize/2;
+  const MA=CFG.eyeMove*CFG.range/R*CFG.turnK;
+  const Ax=gx*MA;
+  const Ay=CFG.eyeY/R + gy*MA*CFG.eyeMoveY;
+  sharedRot=CFG.roll*Math.atan2(Math.sin(Ay)*Math.sin(Ax),Math.cos(Ay));
+}
+function eyePose(bx,by,gx,gy){
+  const R=CFG.bodySize/2;
+  const MA=CFG.eyeMove*CFG.range/R*CFG.turnK;
+  const ax=bx/R + gx*MA;
+  const ay=by/R + gy*MA*CFG.eyeMoveY;
+  const ca=Math.cos(ay), sa=Math.sin(ay);
+  const cA=Math.cos(ax), sA=Math.sin(ax);
+  return {x:sA*ca*R, y:sa*R, rot:sharedRot};
+}
+
+/* ---------------- 运动 ---------------- */
+const gaze={x:0,y:0,vx:0,vy:0,tx:0,ty:0,next:0,seed:rand(0,99)};
+const eyes={l:{lid:0},r:{lid:0},nextGaze:0};
+let blink={t0:-99999,dur:170,next:1400};
+let press=0,pressV=0,sq=0,sqV=0;
+let holding=false,holdT0=-99999,popUntil=-99999,onBall=false;
+let combo=0,lastTap=-99999,rageUntil=-99999,rage=0;
+const RAGE_TAPS=5,RAGE_WINDOW=900,RAGE_COOL=2800;
+let autoMood=null;
+const MOOD=()=>autoMood||'normal';
+
+/* 尊重系统「减少动效」：自动飘动、眨眼和形变都收一收，点击仍可交互 */
+const reduceMotion=window.matchMedia &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+if(reduceMotion){
+  CFG.jitter=0; CFG.speed=.12; CFG.pressPop=.05; CFG.pressHold=.01;
+  CFG.roll=0; CFG.jellyMax=.02;
+  blink.next=1e15;
+}
+
+/* ---------------- 指针 ----------------
+   按住舞台内任何地方 → 盯着你的手看；松手恢复自己看。
+   只有按在球上才算「点它」，触发果冻与生气计数。 */
+const ptr={x:0,y:0};
+function localPt(e){
+  const r=cv.getBoundingClientRect();
+  return {x:e.clientX-r.left,y:e.clientY-r.top};
+}
+window.addEventListener('pointermove',e=>{
+  const p=localPt(e);ptr.x=p.x;ptr.y=p.y;
+},{passive:true});
+
+function onDown(e){
+  const p=localPt(e);
+  ptr.x=p.x;ptr.y=p.y;
+  holding=true;
+  onBall=Math.hypot(p.x-cx0,p.y-cy0)<=bodyR()*S*1.25;
+  if(onBall) onTap(e);
+}
+function onRelease(){
+  if(!holding) return;
+  holding=false;onBall=false;
+  eyes.nextGaze=performance.now()+300;
+}
+cv.addEventListener('pointerdown',onDown,{passive:true});
+window.addEventListener('pointerup',onRelease,{passive:true});
+window.addEventListener('pointercancel',onRelease,{passive:true});
+window.addEventListener('blur',onRelease);
+
+function onTap(e){
+  const now=performance.now();
+  holdT0=now;
+  popUntil=now+CFG.popGrowMs+CFG.popHoldMs;
+  if(now<rageUntil) return;
+  combo=(now-lastTap<RAGE_WINDOW)?combo+1:1;
+  lastTap=now;
+  if(combo>=RAGE_TAPS){
+    const extra=Math.min(combo-RAGE_TAPS,10)*380;
+    rageUntil=Math.max(rageUntil,now+RAGE_COOL+extra);
   }
-  var idx=0, stops=[], nameEl=document.getElementById("colorName");
-  for(var i=0;i<5;i++) stops.push(document.getElementById("s"+i));
-  function apply(){
-    var p=palettes[idx], c=resolve(p);
-    /* 光从左上打过来：数组由亮到暗 */
-    for(var i=0;i<5;i++) stops[i].setAttribute("stop-color",c[i]);
-    var accent=p.accent||c[3];
-    document.documentElement.style.setProperty("--accent",accent);
-    document.documentElement.style.setProperty("--glow",c[0]);
-    nameEl.textContent=p.name;
+}
+function doBlink(){
+  const now=performance.now();
+  if(now-blink.t0>blink.dur){blink.t0=now;blink.dur=rand(150,230);}
+  blink.next=now+1000/(0.05+CFG.blink*0.6)*rand(.55,1.6);
+}
+if(!reduceMotion) blink.next=performance.now()+900;
+
+function step(now,dt){
+  const ds=Math.min(dt,40)/1000;
+  const popping=now<popUntil;
+  const pT=popping?-CFG.pressPop:((holding&&onBall)?CFG.pressHold:0);
+  const st1=popping?CFG.popGrowStiff:150,z1=.42,d1=2*Math.sqrt(st1)*z1;
+  const steps=Math.max(1,Math.ceil(ds/(1/240))),h=ds/steps;
+  for(let i=0;i<steps;i++){
+    pressV+=((pT-press)*st1-pressV*d1)*h;press+=pressV*h;
   }
-  var pet=document.getElementById("pet"), wrap=document.getElementById("petWrap");
-  pet.addEventListener("click",function(){
-    idx=(idx+1)%palettes.length;
-    apply();
-    wrap.classList.remove("poke");
-    void wrap.getBBox();           /* 强制重排，连点也能重播动画 */
-    wrap.classList.add("poke");
-  });
-  apply();
+  sq=clamp(pressV*CFG.jellyK,-CFG.jellyMax,CFG.jellyMax);
+  const target=now<rageUntil?1:0;
+  const tau=target?0.10:0.05;
+  rage+=(target-rage)*(1-Math.exp(-ds/tau));
+  if(now<lastTap-RAGE_WINDOW) combo=0;
+  autoMood=rage>0.30?'angry':null;
+
+  if(holding){
+    const dx=ptr.x-cx0,dy=ptr.y-cy0,d=Math.hypot(dx,dy)||1;
+    const sat=Math.max(1,bodyR()*S*0.8);
+    const n=d/(d+sat);
+    gaze.tx=dx/d*n;gaze.ty=dy/d*n;
+    eyes.nextGaze=now+1e9;
+  }else if(now>eyes.nextGaze && !reduceMotion){
+    gaze.tx=rand(-1,1)*.85;gaze.ty=rand(-1,1)*.7;
+    eyes.nextGaze=now+rand(1400,3400);
+  }
+  const st=30+CFG.speed*340,dp=2*Math.sqrt(st)*.62,t=now/1000;
+  const j=CFG.jitter;
+  const mx=(Math.sin(t*1.7+gaze.seed)*.6+Math.sin(t*4.3+gaze.seed*2.7)*.3)*.08*j;
+  const my=(Math.cos(t*2.3+gaze.seed*1.3)*.6+Math.cos(t*5.1+gaze.seed*3.1)*.3)*.06*j;
+  gaze.vx+=((gaze.tx+mx-gaze.x)*st-gaze.vx*dp)*ds;
+  gaze.vy+=((gaze.ty+my-gaze.y)*st-gaze.vy*dp)*ds;
+  gaze.x+=gaze.vx*ds;gaze.y+=gaze.vy*ds;
+  eyes.l.lid=eyeLid(now);eyes.r.lid=eyeLid(now);
+  if(now>blink.next)doBlink();
+}
+function eyeLid(now){
+  const bp=(now-blink.t0)/blink.dur;
+  if(bp<0||bp>=1)return 0;
+  if(bp<0.36){const u=bp/0.36;return u*u*(3-2*u);}
+  const u=(bp-0.36)/0.64,e=u*u*(3-2*u);
+  return clamp(1-e-Math.sin(u*Math.PI)*0.09*(1-u),0,1);
+}
+function bodyR(){return CFG.bodySize/2*(1-press);}
+
+/* ---------------- 绘制 ---------------- */
+function draw(now){
+  const R=bodyR()*S;
+  cx0=W/2;cy0=H/2;
+  ES=S*(1-press);
+
+  /* 透明背景：原型这里铺了一层白，介绍页要露出自己的渐变背景 */
+  ctx.clearRect(0,0,W,H);
+
+  const RX=R*(1+sq*0.5),RY=R*(1-sq*0.5);
+  const BASE=Math.max(RX,RY);
+
+  if(CFG.shadow){
+    const ox=R*CFG.shadowDX,oy=R*CFG.shadowDY;
+    const sr=Math.max(RX,RY)*CFG.shadowScale;
+    const A=CFG.shadowAlpha,C='rgba(34,70,124,';
+    ctx.save();
+    ctx.translate(cx0,cy0);
+    ctx.scale(RX/BASE,RY/BASE);
+    ctx.translate(-cx0,-cy0);
+    const sg=ctx.createRadialGradient(cx0+ox,cy0+oy,sr*0.35,cx0+ox,cy0+oy,sr*1.16);
+    sg.addColorStop(0,C+A+')');
+    sg.addColorStop(.58,C+(A*0.82).toFixed(3)+')');
+    sg.addColorStop(1,C+'0)');
+    ctx.fillStyle=sg;
+    ctx.beginPath();ctx.arc(cx0+ox,cy0+oy,sr*1.16,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
+  const g=ctx.createRadialGradient(
+    cx0-RX*0.14,cy0-RY*0.18,RX*0.05,cx0,cy0,Math.max(RX,RY)*1.02);
+  g.addColorStop(0,SKIN.core);
+  g.addColorStop(.40,SKIN.in1);
+  g.addColorStop(.72,SKIN.in2);
+  g.addColorStop(.92,SKIN.edge);
+  g.addColorStop(1,SKIN.rim);
+  ctx.fillStyle=g;
+  ctx.beginPath();ctx.ellipse(cx0,cy0,RX,RY,0,0,Math.PI*2);ctx.fill();
+
+  const ew=eyeW();
+  const bx=CFG.eyeGap+ew/2;
+  updateSharedRot(gaze.x,gaze.y);
+  drawEye(-bx,CFG.eyeY,'l',eyes.l.lid);
+  drawEye( bx,CFG.eyeY,'r',eyes.r.lid);
+}
+function drawEye(bx,by,side,lid){
+  const ew=eyeW(),eh=eyeH();
+  const rx=ew/2,ry=eh/2;
+  const P=eyePose(bx,by,gaze.x,gaze.y);
+
+  const angry=MOOD()==='angry'&&rage>0.01;
+  const al=angry?CFG.angryLid*rage:0;
+  const cut=-ry+eh*Math.max(lid,al);
+  const sl=angry?CFG.lidSlant*(1-al*0.35):0;
+  const yOut=cut-sl,yIn=cut+sl;
+  const ya=side==='l'?yOut:yIn;
+  const yb=side==='l'?yIn:yOut;
+
+  const cs=Math.cos(P.rot),sn=Math.sin(P.rot);
+  const px=P.x*cs-P.y*sn;
+  const py=P.x*sn+P.y*cs;
+
+  ctx.save();
+  ctx.translate(ex_(px),ey_(py));
+  ctx.rotate(P.rot);
+  ctx.scale(ES,ES);
+  ctx.beginPath();
+  ctx.moveTo(-rx-1,ya);
+  ctx.lineTo(rx+1,yb);
+  ctx.lineTo(rx+1,ry+1);
+  ctx.lineTo(-rx-1,ry+1);
+  ctx.closePath();ctx.clip();
+  capsule(rx,ry);
+  ctx.restore();
+}
+function capsule(rx,ry){
+  const r=Math.min(rx,ry)*CFG.eyeRound;
+  const flat=Math.max(0,ry-r);
+  ctx.beginPath();
+  ctx.arc(0,-flat,r,Math.PI,0);
+  ctx.lineTo(rx,flat);
+  ctx.arc(0,flat,r,0,Math.PI);
+  ctx.closePath();
+  ctx.fillStyle='#ffffff';
+  ctx.fill();
+}
+
+/* ---------------- 主循环 ---------------- */
+let prev=0;
+function frame(now){
+  const dt=prev?now-prev:16;
+  prev=now;
+  step(now,dt);
+  draw(now);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------------- 配色：出厂 8 色 ----------------
+   点色点换衣服，不占用球本身的点击（那是原型里的「逗它」）。
+   淡蓝是 ini 里 5 层渐变原值；其余按 HSL 推 5 层明暗。 */
+const palettes=[
+  {name:'淡蓝',stops:['#4a86d8','#5a95e0','#6ca4e8','#8cb9f0','#a9cdf6']},
+  {name:'天蓝',h:201,s:65,l:57},{name:'靛蓝',h:230,s:65,l:57},
+  {name:'紫',  h:266,s:65,l:57},{name:'青',  h:186,s:65,l:57},
+  {name:'绿',  h:146,s:65,l:57},{name:'粉',  h:337,s:65,l:57},
+  {name:'橙',  h:36, s:65,l:57}
+];
+function hsl(h,s,l){return 'hsl('+h+','+s+'%,'+l+'%)';}
+function layers(p){
+  if(p.stops)return p.stops;
+  return [-22,-11,0,10,20].map(d=>hsl(p.h,p.s,clamp(p.l+d,12,92)));
+}
+const sw=document.getElementById('swatches');
+const nameEl=document.getElementById('colorName');
+let idx=0;
+const buttons=palettes.map((p,i)=>{
+  const b=document.createElement('button');
+  b.type='button';
+  b.title=p.name;
+  b.setAttribute('aria-label','切换为 '+p.name);
+  b.style.background=layers(p)[3];
+  b.addEventListener('click',()=>setColor(i));
+  sw.appendChild(b);
+  return b;
+});
+function setColor(i){
+  idx=i;
+  const p=palettes[i],c=layers(p);
+  SKIN.core=c[0];SKIN.in1=c[1];SKIN.in2=c[2];SKIN.edge=c[3];SKIN.rim=c[4];
+  document.documentElement.style.setProperty('--accent',c[2]);
+  document.documentElement.style.setProperty('--glow',c[4]);
+  nameEl.textContent=p.name;
+  buttons.forEach((b,k)=>b.classList.toggle('on',k===i));
+}
+setColor(0);
 })();
 </script>
 </body>
