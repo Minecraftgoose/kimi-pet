@@ -130,17 +130,17 @@ done:
   if(mine) WinHttpCloseHandle(mine);
   WinHttpCloseHandle(hC);
   WinHttpCloseHandle(hS);
-  if(!ok || total<65536){ DeleteFileW(dst); return 0; }
+  if(!ok || total<65536){ return 0; }   /* 内容保留给上层读回 */
 
   /* 下下来的是不是 PE：防止把 403/404 网页当 exe 覆盖自己 */
   { HANDLE rf=CreateFileW(dst,GENERIC_READ,FILE_SHARE_READ,NULL,
         OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
-    if(rf==INVALID_HANDLE_VALUE){ DeleteFileW(dst); return 0; }
+    if(rf==INVALID_HANDLE_VALUE){ return 0; }
     LARGE_INTEGER sz; sz.QuadPart=0; GetFileSizeEx(rf,&sz);
     unsigned char mz[2]={0}; DWORD got=0;
     ReadFile(rf,mz,2,&got,NULL); CloseHandle(rf);
     if(sz.QuadPart<65536 || got!=2 || mz[0]!='M' || mz[1]!='Z'){
-      DeleteFileW(dst); return 0;
+      return 0;   /* 不是 PE：内容留着，当作原始响应展示 */
     } }
   return 1;
 }

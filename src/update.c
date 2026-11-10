@@ -101,7 +101,8 @@ int find_asset_url(const char *json,const char *want,char *out,int outn){
 
    现在做四层防护：
      1. 所有网络 IO 都在工作线程，主线程只弹对话框，球全程照常动；
-     2. WinINet 设超时 + 先查状态码，403/429 立即返回友好提示；
+     2. WinINet 设超时 + 先查状态码；4xx 也把错误页读回来，
+        任何错误都直接贴【原始响应】，不写"可能是没网/代理拦截"这类猜测；
      3. 独立看门狗线程：万一 WinINet 自己不理会超时（某些代理/wine 就是
         这样），强制关闭请求句柄把工作线程拽出来，绝不留挂死线程；
      4. 看门狗【同时覆盖下载阶段】，阈值比 API 长得多。以前只监控 API，
@@ -132,6 +133,10 @@ int find_asset_url(const char *json,const char *want,char *out,int outn){
 #ifndef UPD_MAX_BODY
 #define UPD_MAX_BODY     (16*1024*1024)
 #endif
+/* 错误弹框直接贴原始响应；显示上限与完整落盘文件名 */
+#define UPD_MSG_CHARS    8192
+#define UPD_RAW_SHOW     2000
+#define UPD_RAW_FILE     L"KimiPet_update_error.txt"
 
 /* GitHub API 强制要求 User-Agent，不带会直接 403 */
 static const wchar_t *UPD_GH_HEADERS =
@@ -168,7 +173,7 @@ typedef struct {
   HWND    h;
   int     stage;
   DWORD   status;
-  wchar_t msg[600];
+  wchar_t msg[UPD_MSG_CHARS];
   char    tag[64], url[1024];
   wchar_t src[1200], dst[1200], bat[1200];
 
@@ -211,14 +216,20 @@ static void hg_close(HTTP_SLOTS *s,HINTERNET hUrl,HINTERNET hInet){
    http_get_ex：带超时、带状态码、带响应体上限的一次 GET
    slots 存父/子句柄，看门狗超时时会关掉它们来中断阻塞中的读操作。
    -------------------------------------------------------------------------- */
+/* 失败时 *out 也可能非空 —— 那就是服务器返回的【原始响应体】，调用方 free。
+   winerr / winext 是 Win32 错误码和 WinINet 扩展错误文本，网络层失败时没有
+   响应体，就靠这两项给出真实信息，不写"可能是没网/代理拦截"之类的猜测。 */
 static int http_get_ex(const char *url,const wchar_t *headers,
                        char **out,int *plen,DWORD *status,
-                       HTTP_SLOTS *slots,DWORD tmo){
+                       HTTP_SLOTS *slots,DWORD tmo,
+                       DWORD *winerr,wchar_t *winext,int winextN){
   *out=NULL; *plen=0; *status=0;
+  if(winerr) *winerr=0;
+  if(winext&&winextN) winext[0]=0;
 
   HINTERNET hInet=InternetOpenW(L"KimiPet/" KP_VERSION_W,
                                 INTERNET_OPEN_TYPE_PRECONFIG,NULL,NULL,0);
-  if(!hInet) return 0;
+  if(!hInet){ if(winerr)*winerr=GetLastError(); return 0; }
   if(slots) InterlockedExchangePointer(&slots->inet,hInet);
 
   /* 连接超时独立：慢速下载要给足接收时间，但"连不上"不该陪着等 5 分钟。
@@ -234,6 +245,7 @@ static int http_get_ex(const char *url,const wchar_t *headers,
 
   wchar_t wurl[2048];
   if(MultiByteToWideChar(CP_UTF8,0,url,-1,wurl,2048)<=0){
+    if(winerr)*winerr=GetLastError();
     hg_close(slots,NULL,hInet); return 0;
   }
   /* 按协议决定要不要 SECURE —— asset 直链偶尔是 http，别误加标志 */
@@ -242,20 +254,31 @@ static int http_get_ex(const char *url,const wchar_t *headers,
                 INTERNET_FLAG_NO_COOKIES;
   if(strncmp(url,"https://",8)==0) flags |= INTERNET_FLAG_SECURE;
   HINTERNET hUrl=InternetOpenUrlW(hInet,wurl,headers,0,flags,0);
-  if(!hUrl){ hg_close(slots,NULL,hInet); return 0; }
+  if(!hUrl){
+    if(winerr)*winerr=GetLastError();
+    if(winext&&winextN){
+      DWORD e=0,n=winextN;
+      InternetGetLastResponseInfoW(&e,winext,&n);   /* 服务器/栈给的真实文本 */
+    }
+    hg_close(slots,NULL,hInet); return 0;
+  }
   if(slots) InterlockedExchangePointer(&slots->url,hUrl);
   /* 有些 WinINet 实现只对请求句柄认超时，句柄创建后再设一遍 */
   InternetSetOption(hUrl,INTERNET_OPTION_RECEIVE_TIMEOUT,     &t,sizeof t);
   InternetSetOption(hUrl,INTERNET_OPTION_DATA_RECEIVE_TIMEOUT,&t,sizeof t);
   InternetSetOption(hUrl,INTERNET_OPTION_SEND_TIMEOUT,        &t,sizeof t);
 
-  /* 先读状态码：403/429 这类限流直接返回，不去解析错误页。
-     这条不能退回 v1.2 的"不查状态码"——旧版只是把错误页当 JSON 解析，
-     最后报"版本号看不懂"，并没有更容易成功。 */
+  /* 先读状态码。4xx/5xx 仍判失败，但【必须把错误页读回来】：GitHub 403
+     的 JSON 里有 message / documentation_url，那才是排查最需要的原始信息。
+     不查状态码也不行 —— v1.2 是把错误页当 JSON 解析后报"版本号看不懂"。 */
   DWORD code=0, sz=sizeof code;
   if(HttpQueryInfoW(hUrl,HTTP_QUERY_STATUS_CODE|HTTP_QUERY_FLAG_NUMBER,
                     &code,&sz,NULL)) *status=code;
-  if(code>=400){ hg_close(slots,hUrl,hInet); return 0; }
+  int httpBad = (code>=400);
+  if(httpBad && winext&&winextN){
+    DWORD e=0,n=winextN;
+    InternetGetLastResponseInfoW(&e,winext,&n);
+  }
 
   size_t cap=16384, len=0;
   char *buf=(char*)malloc(cap+1);
@@ -279,8 +302,22 @@ static int http_get_ex(const char *url,const wchar_t *headers,
     if(len>=UPD_MAX_BODY){ ok=0; break; }   /* 同上，绝不把超限数据当成功 */
   }
   buf[len]=0;                 /* 分配时多留了 1 字节，这里永远安全 */
+  /* "连上了但一个字节都没来"也算失败（InternetReadFile 返回 TRUE、got=0）。
+     这类情况要记下底层错误码和 WinINet 扩展文本，弹框才看得出是连接层问题。 */
+  int failed = (!ok||httpBad||len==0);
+  if(failed){
+    if(winerr && !*winerr) *winerr=GetLastError();
+    if(winext&&winextN && !winext[0]){
+      DWORD e=0,n=winextN;
+      InternetGetLastResponseInfoW(&e,winext,&n);
+    }
+  }
   hg_close(slots,hUrl,hInet);
-  if(!ok||len==0){ free(buf); return 0; }
+  if(failed){
+    /* 失败也把读到的原始响应交给调用方，别在这儿丢掉 */
+    if(len>0){ *out=buf; *plen=(int)len; } else free(buf);
+    return 0;
+  }
   *out=buf; *plen=(int)len;
   return 1;
 }
@@ -354,7 +391,7 @@ static int curl_download(const char *url,const wchar_t *dst,volatile LONG *abort
       full,dst);
     started=CreateProcessW(NULL,cmd,NULL,NULL,FALSE,
                            CREATE_NO_WINDOW,NULL,NULL,&si,&pi);
-    if(!started){ DeleteFileW(dst); return 0; }
+    if(!started){ return 0; }   /* dst 保留给上层读回原始响应 */
   }
   /* 分段等待：每 250ms 看一眼 abort，看门狗判定下载超时就能立刻掐掉进程，
      不用陪着 curl 的 --max-time 180 干等。总上限仍是 200 秒。 */
@@ -371,19 +408,19 @@ static int curl_download(const char *url,const wchar_t *dst,volatile LONG *abort
   else TerminateProcess(pi.hProcess,1);
   CloseHandle(pi.hThread);
   CloseHandle(pi.hProcess);
-  if(code!=0){ DeleteFileW(dst); return 0; }
+  if(code!=0){ return 0; }            /* 同上：保留内容 */
 
   /* 校验 PE 头 + 合理体积 */
   HANDLE hf=CreateFileW(dst,GENERIC_READ,FILE_SHARE_READ,NULL,
                         OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
-  if(hf==INVALID_HANDLE_VALUE){ DeleteFileW(dst); return 0; }
+  if(hf==INVALID_HANDLE_VALUE){ return 0; }
   LARGE_INTEGER sz; sz.QuadPart=0;
   GetFileSizeEx(hf,&sz);
   unsigned char mz[2]={0}; DWORD got=0;
   ReadFile(hf,mz,2,&got,NULL);
   CloseHandle(hf);
   if(sz.QuadPart<65536 || got!=2 || mz[0]!='M' || mz[1]!='Z'){
-    DeleteFileW(dst); return 0;
+    return 0;   /* 不是 PE：内容留着，当作原始响应展示 */
   }
   return 1;
 }
@@ -400,16 +437,22 @@ static int curl_download(const char *url,const wchar_t *dst,volatile LONG *abort
    给用户明确提示、释放 g_updBusy 让他可以重试。既保留 v1.2 的硬等成功率，
    又不留挂死线程。
    -------------------------------------------------------------------------- */
+static void give_raw(char **errBody,int *errLen,char *data,int len){
+  if(errBody){ *errBody=data; if(errLen)*errLen=len; }
+  else free(data);
+}
 static int wininet_download(const char *url,const wchar_t *dst,DWORD *status,
-                            HTTP_SLOTS *slots){
+                            HTTP_SLOTS *slots,char **errBody,int *errLen){
   DeleteFileW(dst);
-  char *data=NULL; int len=0; DWORD st=0;
-  int ok=http_get_ex(url,NULL,&data,&len,&st,slots,UPD_DOWNLOAD_MS);
+  char *data=NULL; int len=0; DWORD st=0; DWORD we=0; wchar_t ext[512]=L"";
+  int ok=http_get_ex(url,NULL,&data,&len,&st,slots,UPD_DOWNLOAD_MS,
+                     &we,ext,512);
   if(status) *status=st;
-  if(!ok||!data){ free(data); return 0; }
+  (void)we; (void)ext;
+  if(!ok||!data){ give_raw(errBody,errLen,data,len); return 0; }
   /* 下下来的是不是 PE：看 MZ 头 + 体积，防止把 403/404 网页当 exe 覆盖自己 */
   if(len<65536 || (unsigned char)data[0]!='M' || (unsigned char)data[1]!='Z'){
-    free(data); DeleteFileW(dst); return 0;
+    give_raw(errBody,errLen,data,len); DeleteFileW(dst); return 0;
   }
   int w=write_file_all(dst,(const unsigned char*)data,(size_t)len);
   free(data);
@@ -417,9 +460,28 @@ static int wininet_download(const char *url,const wchar_t *dst,DWORD *status,
   return 1;
 }
 
+/* 兜底链路是流式写文件的，失败时把已落盘的内容抓回来当原始响应。
+   每条链路失败后立刻抓，否则下一条开头的 DeleteFileW 会把它抹掉。 */
+static void grab_dst(const wchar_t *dst,char **errBody,int *errLen){
+  if(!errBody||*errBody) return;
+  HANDLE h=CreateFileW(dst,GENERIC_READ,FILE_SHARE_READ,NULL,
+        OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+  if(h==INVALID_HANDLE_VALUE) return;
+  LARGE_INTEGER sz; sz.QuadPart=0;
+  GetFileSizeEx(h,&sz);
+  if(sz.QuadPart<=0||sz.QuadPart>65536){ CloseHandle(h); return; }
+  int n=(int)sz.QuadPart;
+  char *b=(char*)malloc((size_t)n+1);
+  if(!b){ CloseHandle(h); return; }
+  DWORD got=0; ReadFile(h,b,(DWORD)n,&got,NULL); CloseHandle(h);
+  b[got]=0; *errBody=b; if(errLen)*errLen=(int)got;
+}
 static int download_exe(const char *url,const wchar_t *dst,DWORD *status,
-                        HTTP_SLOTS *slots){
-  if(wininet_download(url,dst,status,slots)) return 1; /* 主路径不变 */
+                        HTTP_SLOTS *slots,char **errBody,int *errLen){
+  if(errBody)*errBody=NULL;
+  if(errLen)*errLen=0;
+  if(wininet_download(url,dst,status,slots,errBody,errLen)) return 1; /* 主路径不变 */
+  grab_dst(dst,errBody,errLen);
   /* 看门狗已判定超时就别再起下一条链路 */
   if(slots && READ(&slots->abort)) return 0;
   /* Win7 纯 C 兜底：WinHTTP，显式请求 TLS 1.2，不依赖任何外部 exe。
@@ -427,8 +489,11 @@ static int download_exe(const char *url,const wchar_t *dst,DWORD *status,
   if(winhttp_download(url,dst,status,
                       slots?&slots->abort:NULL,slots?&slots->whReq:NULL,
                       UPD_CONNECT_MS,UPD_DOWNLOAD_MS,UPD_MAX_BODY)) return 1;
+  grab_dst(dst,errBody,errLen);
   /* 外部工具兜底也吃同一个 abort 标志，超时能被立刻掐掉 */
-  return curl_download(url,dst,slots?&slots->abort:NULL);
+  if(curl_download(url,dst,slots?&slots->abort:NULL)) return 1;
+  grab_dst(dst,errBody,errLen);
+  return 0;
 }
 
 /* 写一个 bat：等本进程结束 → 用新 exe 覆盖 → 启动 → 自删 */
@@ -496,16 +561,11 @@ static DWORD WINAPI upd_watch(LPVOID arg){
           UPD_TMO_MSG *m=(UPD_TMO_MSG*)calloc(1,sizeof *m);
           if(m){
             m->isDownload=isDl;
-            if(isDl)
-              _snwprintf(m->msg,300,
-                L"下载新版本超时（等了 5 分钟没完成），已自动放弃。\n\n"
-                L"已试过 WinINet、WinHTTP 和命令行工具三条链路。\n"
-                L"旧文件没有被改动，球也不会卡住；可以稍后重试，"
-                L"或用随附的 KimiPetUpdater.bat 手动升级（浏览器下载 + 自动拾取）。");
-            else
-              _snwprintf(m->msg,300,
-                L"检查更新超时（30 秒没响应），已自动放弃。\n\n"
-                L"球不会卡住，稍后再试即可；也能手动到 Releases 页面看看。");
+            _snwprintf(m->msg,300,
+              L"[阶段] %ls\n[超时] %lu ms\n[Win32] %lu\n[响应] (无响应体)\n",
+              isDl?L"下载":L"API",
+              (unsigned long)(isDl?UPD_DL_HARD_MS:UPD_HARD_MS),
+              (unsigned long)GetLastError());
             if(!PostMessageW(c->h,KP_WM_UPDATE,1,(LPARAM)m)) free(m);
           }
           InterlockedExchange(&g_updBusy,0);   /* 关键：允许用户重试 */
@@ -554,13 +614,105 @@ void upd_on_timeout(HWND h,void *p){
   free(m);
 }
 
-/* 看门狗判定超时后，把任何失败文案统一换成超时提示 */
+/* --------------------------------------------------------------------------
+   错误弹框：直接贴原始响应，不写"可能是没网/代理拦截""稍后再试即可"这类
+   猜测性话术。只给事实：阶段、HTTP 状态、Win32 错误码、URL、WinINet 扩展
+   错误文本，然后原样附上服务器返回的字节。
+
+   完整原始字节另存到 %TEMP%\KimiPet_update_error.txt —— 弹框有显示上限，
+   但排查时不能丢内容。路径也是一行事实，不是提示。
+   -------------------------------------------------------------------------- */
+static void raw_cat(UPD_CTX *c,const wchar_t *s){
+  size_t n=wcslen(c->msg), cap=UPD_MSG_CHARS;
+  if(n+1>=cap) return;
+  wcsncat(c->msg,s,cap-n-1);
+  c->msg[cap-1]=0;
+}
+static void raw_write_file(const char *body,int len,wchar_t *path,int pathn){
+  path[0]=0;
+  wchar_t dir[1024];
+  if(!GetTempPathW(1024,dir)) return;
+  _snwprintf(path,pathn,L"%ls" UPD_RAW_FILE,dir);
+  HANDLE h=CreateFileW(path,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,
+                       FILE_ATTRIBUTE_NORMAL,NULL);
+  if(h==INVALID_HANDLE_VALUE){ path[0]=0; return; }
+  DWORD wr=0;
+  if(len>0) WriteFile(h,body,(DWORD)len,&wr,NULL);
+  CloseHandle(h);
+}
+static void upd_set_raw(UPD_CTX *c,const wchar_t *stage,DWORD status,
+                        const char *body,int len,const char *url,
+                        DWORD winerr,const wchar_t *winext){
+  c->msg[0]=0;
+  wchar_t t[1200];
+  int hasBody = (body && len>0);
+  _snwprintf(t,1200,L"[阶段] %ls\n",stage);            raw_cat(c,t);
+  if(status){ _snwprintf(t,1200,L"[HTTP] %lu\n",(unsigned long)status); raw_cat(c,t); }
+  /* 没有响应体时连 0 也显示：GetLastError()==0 本身就是一条事实 ——
+     "系统层没报错，是服务器连上了却一个字节都没给"，别留一片空白。 */
+  if(winerr || !hasBody){
+    _snwprintf(t,1200,L"[Win32] %lu\n",(unsigned long)winerr); raw_cat(c,t);
+  }
+  if(url&&*url){
+    wchar_t wu[1024];
+    if(MultiByteToWideChar(CP_UTF8,0,url,-1,wu,1024)){
+      _snwprintf(t,1200,L"[URL] %ls\n",wu); raw_cat(c,t);
+    }
+  }
+  if(winext&&*winext){ _snwprintf(t,1200,L"[WinINet] %ls\n",winext); raw_cat(c,t); }
+
+  if(hasBody){
+    _snwprintf(t,1200,L"[响应 %d 字节]\n",len);        raw_cat(c,t);
+
+    /* 优先按 UTF-8 解码（GitHub 的 JSON/HTML 都是）；非法字节则退回逐字节，
+       控制字符替换成 '.'，避免 \0 截断 MessageBox 或喷出响铃。 */
+    wchar_t *wide=(wchar_t*)malloc(((size_t)len+1)*sizeof(wchar_t));
+    int wn=0;
+    if(wide){
+      wn=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,body,len,wide,len+1);
+      if(wn<=0) wn=0;
+    }
+    int srcN = wn>0 ? wn : len;
+    wchar_t *show=(wchar_t*)malloc((UPD_RAW_SHOW+2)*sizeof(wchar_t));
+    int shown=0;
+    if(show){
+      while(shown<UPD_RAW_SHOW && shown<srcN){
+        wchar_t ch = wn>0 ? wide[shown] : (wchar_t)(unsigned char)body[shown];
+        if(ch!=L'\r'&&ch!=L'\n'&&ch!=L'\t'&&(ch<0x20||ch==0x7f)) ch=L'.';
+        show[shown++]=ch;
+      }
+      show[shown]=0;
+      raw_cat(c,show);
+      free(show);
+    }
+    free(wide);
+    if(srcN>shown){
+      _snwprintf(t,1200,L"\n[... 已截断，完整响应 %d 字节]\n",len); raw_cat(c,t);
+    }else raw_cat(c,L"\n");
+
+    wchar_t path[1024];
+    raw_write_file(body,len,path,1024);
+    if(*path){ _snwprintf(t,1200,L"[完整响应] %ls\n",path); raw_cat(c,t); }
+  }else{
+    raw_cat(c,L"[响应] (无响应体)\n");
+    /* 删掉上一轮留下的完整响应文件：没有 body 时弹框不会给出路径，
+       但用户若自己去翻那个 txt，不该看到上一次的旧内容误判。 */
+    wchar_t dir[1024],path[1024];
+    if(GetTempPathW(1024,dir)){
+      _snwprintf(path,1024,L"%ls" UPD_RAW_FILE,dir);
+      DeleteFileW(path);
+    }
+  }
+}
+
+/* 看门狗判定超时后，把任何失败文案统一换成事实性超时信息 */
 static void upd_override_timeout(UPD_CTX *c){
   if(READ(&c->timedOut)){
     c->stage=UPD_ERR_NET;
-    _snwprintf(c->msg,600,
-      L"检查更新超时（30 秒没响应），已自动放弃。\n\n"
-      L"球不会卡住，稍后再试即可；也能手动到 Releases 页面看看。");
+    DWORD limit=(READ(&c->netKind)==2)?UPD_DL_HARD_MS:UPD_HARD_MS;
+    _snwprintf(c->msg,UPD_MSG_CHARS,
+      L"[阶段] 网络\n[超时] %lu ms\n[Win32] %lu\n[响应] (无响应体)\n",
+      (unsigned long)limit,(unsigned long)GetLastError());
   }
 }
 
@@ -570,35 +722,17 @@ static DWORD WINAPI upd_thread(LPVOID arg){
   _snprintf(api,sizeof api,"https://api.github.com/repos/%s/%s/releases/latest",
             KP_REPO_OWNER,KP_REPO_NAME);
 
-  char *json=NULL; int jlen=0; DWORD st=0;
+  char *json=NULL; int jlen=0; DWORD st=0, we=0;
+  wchar_t ext[512]=L"";
   net_begin(c,1);   /* API 阶段：30 秒硬超时 */
-  int ok=http_get_ex(api,UPD_GH_HEADERS,&json,&jlen,&st,&c->slots,UPD_TIMEOUT_MS);
+  int ok=http_get_ex(api,UPD_GH_HEADERS,&json,&jlen,&st,
+                     &c->slots,UPD_TIMEOUT_MS,&we,ext,512);
   net_end(c);
 
   if(!ok){
-    if(st==403||st==429){
-      c->stage=UPD_ERR_HTTP;
-      _snwprintf(c->msg,600,
-        L"GitHub 接口返回 %lu（API 限流）。\n\n"
-        L"未登录状态下 GitHub 每小时只放行 60 次 API 请求，"
-        L"稍等一会儿再试就行，本程序不会卡住。\n\n"
-        L"也可以直接打开 Releases 页面看：\n"
-        L"https://github.com/" KP_REPO_OWNER_W L"/" KP_REPO_NAME_W L"/releases",
-        (unsigned long)st);
-    }else if(st>=400){
-      c->stage=UPD_ERR_HTTP;
-      _snwprintf(c->msg,600,
-        L"GitHub 返回 HTTP %lu，检查更新没做成。\n\n"
-        L"球不会卡住，稍后再试即可；也能手动到 Releases 页面看看。",
-        (unsigned long)st);
-    }else{
-      c->stage=UPD_ERR_NET;
-      _snwprintf(c->msg,600,
-        L"没能连上 GitHub 检查更新。\n\n"
-        L"可能是没网、代理/防火墙拦截，或请求超时（已自动放弃）。\n"
-        L"本程序不会卡住，稍后再试即可。\n\n"
-        L"手动查看：https://github.com/" KP_REPO_OWNER_W L"/" KP_REPO_NAME_W L"/releases");
-    }
+    c->stage = st>=400 ? UPD_ERR_HTTP : UPD_ERR_NET;
+    /* 403/429 的错误页 JSON 里有 message / documentation_url，原样贴出来 */
+    upd_set_raw(c,L"API",st,json,jlen,api,we,ext);
     upd_override_timeout(c);
     free(json);
     upd_notify(c);
@@ -608,39 +742,37 @@ static DWORD WINAPI upd_thread(LPVOID arg){
   char tag[64]={0}, url[1024]={0};
   int haveTag=json_str(json,"tag_name",tag,sizeof tag);
   int haveUrl=find_asset_url(json,upd_asset_name(),url,sizeof url);
-  free(json);
 
   if(!haveTag){
     c->stage=UPD_ERR_JSON;
-    _snwprintf(c->msg,600,
-      L"没能读到最新版本号（GitHub 返回的内容看不懂）。\n"
-      L"稍后再试，或到 Releases 页面手动查看。");
-    upd_notify(c); return 0;
+    upd_set_raw(c,L"API（读不到版本号）",200,json,jlen,api,0,NULL);
+    free(json); upd_notify(c); return 0;
   }
   int nmaj=0,nmin=0,npat=0;
   if(!parse_ver(tag,&nmaj,&nmin,&npat)){
     c->stage=UPD_ERR_JSON;
-    _snwprintf(c->msg,600,L"最新版本号 %hs 看不懂，跳过更新。",tag);
-    upd_notify(c); return 0;
+    upd_set_raw(c,L"API（版本号无法解析）",200,json,jlen,api,0,NULL);
+    free(json); upd_notify(c); return 0;
   }
   if(ver_cmp(nmaj,nmin,npat,KP_VERSION_MAJOR,KP_VERSION_MINOR,KP_VERSION_PATCH)<=0){
     c->stage=UPD_LATEST;
-    _snwprintf(c->msg,600,L"已经是最新版了。\n\n当前版本：%hs\n最新版本：%hs",
+    _snwprintf(c->msg,UPD_MSG_CHARS,
+               L"已经是最新版了。\n\n当前版本：%hs\n最新版本：%hs",
                KP_VERSION_STR,tag);
-    upd_notify(c); return 0;
+    free(json); upd_notify(c); return 0;
   }
   if(!haveUrl){
     c->stage=UPD_ERR_NOASSET;
-    _snwprintf(c->msg,600,
-      L"找到新版本 %hs，但 Release 里没有本程序对应的安装包"
-      L"（可能是发布时漏传了独立 exe）。\n\n请到 Releases 页面手动下载。",tag);
-    upd_notify(c); return 0;
+    /* 原样贴出 JSON，用户能自己看到 assets 里到底有哪些附件 */
+    upd_set_raw(c,L"API（缺少对应安装包）",200,json,jlen,api,0,NULL);
+    free(json); upd_notify(c); return 0;
   }
+  free(json);
 
   /* 有新版本：问一句再动手（确认框必须主线程弹） */
   strcpy(c->tag,tag); strcpy(c->url,url);
   c->stage=UPD_ASK;
-  _snwprintf(c->msg,600,
+  _snwprintf(c->msg,UPD_MSG_CHARS,
     L"发现新版本 %hs（当前 %hs）。\n\n要现在更新吗？\n"
     L"会下载新 exe、覆盖旧文件并重启本程序；下载可能需要几十秒，"
     L"期间球照常动。\n你的配置文件和模组都不会动。",
@@ -656,7 +788,7 @@ static DWORD WINAPI upd_thread(LPVOID arg){
   if(GetTempPathW(1024,tmpdir)==0) tmpdir[0]=0;
   if(!GetModuleFileNameW(NULL,self,MAX_PATH)){
     c->stage=UPD_ERR_BAT;
-    _snwprintf(c->msg,600,L"取不到本程序的路径，没法更新。");
+    upd_set_raw(c,L"更新脚本",0,NULL,0,NULL,GetLastError(),NULL);
     upd_notify(c); return 0;
   }
   _snwprintf(c->src,1200,L"%lsKimiPet_update_%lu.exe",tmpdir,GetCurrentProcessId());
@@ -666,28 +798,24 @@ static DWORD WINAPI upd_thread(LPVOID arg){
   /* 下载：主路径 WinINet 直下（v1.2 实证可用），curl 仅兜底。
      看门狗同样覆盖这段，但用独立的 330 秒阈值 —— 1.3 那次是错在
      把下载塞进【20 秒】的 API 看门狗，不是错在"下载不该被监控"。 */
-  DWORD dlStatus=0;
+  DWORD dlStatus=0; char *raw=NULL; int rawLen=0;
   net_begin(c,2);
-  int dl=download_exe(c->url,c->src,&dlStatus,&c->slots);
+  int dl=download_exe(c->url,c->src,&dlStatus,&c->slots,&raw,&rawLen);
   net_end(c);
   /* 看门狗已提示过，这里不能再弹一次框；直接收尾并允许用户重试 */
-  if(READ(&c->timedOut)){ DeleteFileW(c->src); upd_cleanup(c); return 0; }
+  if(READ(&c->timedOut)){ free(raw); DeleteFileW(c->src); upd_cleanup(c); return 0; }
   if(!dl){
     c->stage=UPD_ERR_DOWNLOAD;
-    _snwprintf(c->msg,600,
-      L"下载新版本失败（HTTP %lu）。\n\n"
-      L"检查更新用的 API 能通，但下载 exe 没成；常见原因是代理/杀软拦截，"
-      L"或 Release 附件还没传好。\n\n"
-      L"可以重试；仍不行就到 Releases 页面手动下载，或用随附的 "
-      L"KimiPetUpdater.bat 手动升级（浏览器下载 + 自动拾取，不走命令行）。\n\n"
-      L"旧文件没有被改动，本程序也不会退出。",
-      (unsigned long)dlStatus);
+    /* 403 页 / HTML / 非 PE 内容原样贴出，不猜原因 */
+    upd_set_raw(c,L"下载",dlStatus,raw,rawLen,c->url,0,NULL);
+    free(raw);
     DeleteFileW(c->src);
     upd_notify(c); return 0;
   }
+  free(raw);
   if(!write_updater_bat(c->bat,c->src,c->dst)){
     c->stage=UPD_ERR_BAT;
-    _snwprintf(c->msg,600,L"没能写出更新脚本，取消更新。旧文件没有被改动。");
+    upd_set_raw(c,L"更新脚本",0,NULL,0,NULL,GetLastError(),NULL);
     DeleteFileW(c->src);
     upd_notify(c); return 0;
   }
@@ -707,9 +835,10 @@ void upd_on_message(HWND h,void *p){
       break;
     case UPD_DO_REPLACE:
       if((INT_PTR)ShellExecuteW(NULL,L"open",c->bat,NULL,NULL,SW_SHOW)<=32){
+        DWORD e=GetLastError();
         DeleteFileW(c->src); DeleteFileW(c->bat);
-        MessageBoxW(h,L"启动更新脚本失败，取消更新。旧文件没有被改动。",
-                    L"检查更新",MB_OK|MB_ICONWARNING);
+        upd_set_raw(c,L"启动更新脚本",0,NULL,0,NULL,e,NULL);
+        MessageBoxW(h,c->msg,L"检查更新",MB_OK|MB_ICONWARNING);
       }else{
         if(g_menu){ DestroyMenu(g_menu); g_menu=NULL; }
         PostQuitMessage(0);
@@ -727,6 +856,13 @@ void do_update(HWND h){
   /* 连点直接忽略，不弹框打断 —— 第一次的结果几秒内就会出来 */
   if(InterlockedCompareExchange(&g_updBusy,1,0)!=0) return;
 
+  /* 每轮开始先清掉上一轮的诊断文件，避免成功/无错误时留下旧内容误判 */
+  { wchar_t dir[1024],p[1024];
+    if(GetTempPathW(1024,dir)){
+      _snwprintf(p,1024,L"%ls" UPD_RAW_FILE,dir);
+      DeleteFileW(p);
+    } }
+
   UPD_CTX *c=(UPD_CTX*)calloc(1,sizeof *c);
   if(!c){ InterlockedExchange(&g_updBusy,0); return; }
   c->h=h;
@@ -737,11 +873,15 @@ void do_update(HWND h){
   c->watch=CreateThread(NULL,0,upd_watch,c,0,NULL);
   HANDLE th=CreateThread(NULL,0,upd_thread,c,0,NULL);
   if(!th){
+    DWORD e=GetLastError();
     EXCHANGE(&c->finished,1);
     if(c->watch){ WaitForSingleObject(c->watch,2000); CloseHandle(c->watch); }
     CloseHandle(c->ev); free(c);
     InterlockedExchange(&g_updBusy,0);
-    MessageBoxW(h,L"没法启动检查更新线程。",L"检查更新",MB_OK|MB_ICONWARNING);
+    wchar_t t[256];
+    _snwprintf(t,256,L"[阶段] 线程\n[Win32] %lu\n[响应] (无响应体)\n",
+               (unsigned long)e);
+    MessageBoxW(h,t,L"检查更新",MB_OK|MB_ICONWARNING);
     return;
   }
   CloseHandle(th);
