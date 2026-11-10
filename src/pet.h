@@ -48,9 +48,9 @@ extern double g_simNow;
 /* ---------------- 版本 / 仓库（自动更新用） ---------------- */
 #define KP_VERSION_MAJOR 1
 #define KP_VERSION_MINOR 4
-#define KP_VERSION_PATCH 5
-#define KP_VERSION_STR   "v1.4.5"
-#define KP_VERSION_W    L"v1.4.5"
+#define KP_VERSION_PATCH 6
+#define KP_VERSION_STR   "v1.4.6"
+#define KP_VERSION_W    L"v1.4.6"
 #define KP_REPO_OWNER    "Minecraftgoose"
 #define KP_REPO_NAME     "kimi-pet"
 #define KP_REPO_OWNER_W  L"Minecraftgoose"
@@ -245,6 +245,7 @@ int    parse_hex_rgb(const char *p, RGB8 *out);
 void   rgb2hsl(RGB8 c, double *H,double *S,double *L);
 RGB8   hsl2rgb(double h,double s,double l);
 int    exe_dir(wchar_t *out,int n);
+int    about_url_build(wchar_t *out,int outn,const wchar_t *cfgPath);
 int    reg_get_dword(const wchar_t *name, DWORD *out);
 
 /* ---- config.c：KimiPet.ini ---- */

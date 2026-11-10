@@ -90,7 +90,10 @@ KimiPet_源码与程序
 - **bat 里定位文件别用带引号的通配符，也别依赖 `pushd`**：`for %%f in ("%~dp0*.exe")` 拿到的是字面字符串，不展开；而 `pushd` 在部分 cmd / wine 环境会直接失败（实测 `PUSHD FAILED`）。可靠写法是 `dir /b /o-d "路径\*.exe" 2^>nul` 配 `for /f "delims="`，再自己拼全路径、`%%~ff` 取绝对路径。曾经因此找不到旧文件名 `MiniPet_x64.exe`。
 - **所有 `.bat` 必须纯 ASCII**：注释、`echo`、`title`、`REM` 一律英文，不写中文、不用全角标点，也不要 `chcp 65001`（部分 cmd 代码页下 bat 文件按 ANSI 解析，一个中文就可能整段失效）。交付前用「字节 ≥ 128 计数为 0」校验，包括 `KimiPetUpdater.bat` 和 `build.bat`。**程序运行时生成的覆盖 bat 同样适用**：用 `CP_OEMCP` 编码、不加 chcp，否则中文路径在 GBK cmd 下乱码、`copy` 静默失败。
 - **`docs/index.html` 里的小圆球用桌面版 Canvas 网页原型，别再手搓 SVG**：球面投影眼睛、果冻形变、眨眼、按住注视、连点 5 次生气、5 层渐变都要按原型来。原型原本是全屏 canvas，嵌进介绍页必须做四处局部化：收进 `.stage` 容器、resize 用舞台 rect、指针坐标换成相对 canvas 的局部坐标、去掉铺满全屏的白色 `fillRect` 改成 `clearRect` 透明。`touch-action:none` 只能加在 `.stage` 上，加到 `body` 会让整页没法滚动。换色走独立色点，别占用球本身的点击（那是「逗它」）。
-- **版本号显示带 `v` 前缀**（`v1.4.5`），比较用数字宏不影响。
+- **功能卡图标用内嵌的 Microsoft Fluent Emoji 3D PNG，不用字符 emoji**：从 `microsoft/fluentui-emoji` 的 `assets/<Name>/3D/<name>_3d.png` 取（jsDelivr 的 `cdn.jsdelivr.net/gh/...` 可下，`raw.githubusercontent.com` 在沙盒里不通），缩到 72×72 再 base64 内嵌进 `docs/index.html`，保持单文件离线可看、零外部请求。目录名是 CLDR 短名（`Sleeping face` / `Counterclockwise arrows button`，不是 Sleeping Face），写错会 404。别用字符 emoji 顶替 —— 各平台字体渲染不一致。
+- **「关于 kimi 小圆球」直接打开介绍页，别弹信息框**：URL 形如 `https://minecraftgoose.github.io/kimi-pet/#<版本>&<配置文件路径>`。路径必须 UTF-8 percent-encoding，让 `decodeURIComponent` 能还原中文/空格/反斜杠，且 `&` `#` 要编码成 `%26` `%23`，否则网页解析会断在第一个 `&`。`about_url_build()` 放 `util.c`（纯字符串函数，RENDER_TEST 可断言），先算总长再写，缓冲不够就保持 `out[0]=0` 返回失败，别留半个 URL。网页端解析 hash 并在页面**最顶部**显示「来自本机的 kimi 小圆球」信息条（版本 + 配置路径 + 版本不一致提示），同时监听 `hashchange`；不带 hash 时完全隐藏。打开失败只显示 URL 与 Win32 错误码。
+- **页脚别堆成几行散 `<p>`**：`.foot-top` 用 flex 两栏（左品牌+版权，右导航链接），下面单独一行 `.foot-note` 放免责声明，移动端堆叠。
+- **版本号显示带 `v` 前缀**（`v1.4.6`），比较用数字宏不影响。
 - **发版必须打 tag** 才会触发 Release；只 push 分支只会构建不发布。
 - **Release 附件平铺、不打包 zip**；必须有独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`（「检查更新」按架构名找），外加 `KimiPetUpdater.bat` 供老版本用户手动升级。
 - **老 .NET 没有 `Tls12` 具名枚举**：PowerShell 2.0 / .NET 3.5 的 `SecurityProtocolType` 只有 `Ssl3`、`Tls`，写 `[Net.SecurityProtocolType]::Tls12` 会在赋值阶段抛 `PropertyAssignmentException`（报错「可能的枚举值为 Ssl3、Tls」），下载还没开始就死。用数值 `3072` 经 `[Enum]::ToObject([Net.SecurityProtocolType],3072)` 设置并包 try/catch；兜底顺序里优先 Win7+ 自带的 `certutil.exe`（走系统 HTTP 栈，不受 .NET 版本限制）。

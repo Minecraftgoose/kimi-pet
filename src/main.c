@@ -94,7 +94,7 @@ static void popup_menu(int x,int y){
   AppendMenuW(g_menu,MF_STRING,ID_RELOAD,L"重新加载配置");
   AppendMenuW(g_menu,MF_STRING,ID_CHECKUPD,L"检查更新…");
   AppendMenuW(g_menu,MF_STRING,ID_OPENCFG,L"打开配置文件…");
-  AppendMenuW(g_menu,MF_STRING,ID_ABOUT,L"关于 Kimi 小圆球");
+  AppendMenuW(g_menu,MF_STRING,ID_ABOUT,L"关于 kimi 小圆球");
   AppendMenuW(g_menu,MF_STRING,ID_QUIT,L"退出");
 
   CheckMenuItem(g_menu,ID_TOPMOST,g_topmost    ?MF_CHECKED:MF_UNCHECKED);
@@ -261,22 +261,16 @@ static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l){
       break;
     }
     case ID_ABOUT:{
-      wchar_t info[1600];
-      _snwprintf(info,1600,
-        L"kimi小圆球\n"
-        L"版本 " KP_VERSION_W L"\n"
-        L"\n"
-        L"作者：Minecraftgoose\n"
-        L"https://github.com/Minecraftgoose/\n"
-        L"\n"
-        L"仓库：\n"
-        L"https://github.com/Minecraftgoose/kimi-pet\n"
-        L"\n"
-        L"配置文件：\n%ls\n"
-        L"\n"
-        L"MIT许可证",
-        g_cfgPath);
-      MessageBoxW(h,info,L"关于", MB_OK|MB_ICONINFORMATION);
+      /* 直接打开介绍页，hash 里带上本机版本和实际配置文件路径。
+         网页会解析出来显示「来自本机的 kimi 小圆球」一条信息。 */
+      wchar_t url[16384];
+      int built=about_url_build(url,16384,g_cfgPath);
+      if(built && (INT_PTR)ShellExecuteW(NULL,L"open",url,NULL,NULL,SW_SHOW)>32) break;
+      /* 没默认浏览器时给出 URL 本身，便于复制；不写猜测性话术 */
+      wchar_t t[16384];
+      _snwprintf(t,16384,L"[阶段] 打开介绍页\n[Win32] %lu\n[URL] %ls\n",
+                 (unsigned long)GetLastError(),built?url:L"(生成失败)");
+      MessageBoxW(h,t,L"关于 kimi 小圆球",MB_OK|MB_ICONINFORMATION);
       break;
     }
     case ID_QUIT:

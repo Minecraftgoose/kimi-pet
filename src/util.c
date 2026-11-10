@@ -202,6 +202,42 @@ void rgb2hsl(RGB8 c, double *H,double *S,double *L){
   *H=h; *S=s*100.0; *L=l*100.0;
 }
 
+/* ---- 右键「关于」打开的介绍页地址 ----
+   格式： https://minecraftgoose.github.io/kimi-pet/#<版本>&<配置文件路径>
+   路径按 UTF-8 percent-encoding（只保留 unreserved 字符），网页端用
+   decodeURIComponent 还原中文、空格、反斜杠和 %APPDATA% 展开后的实际路径。
+   纯字符串处理，不依赖 Windows API，RENDER_TEST 下也能直接断言。 */
+#define ABOUT_PAGE_BASE L"https://minecraftgoose.github.io/kimi-pet/"
+int about_url_build(wchar_t *out,int outn,const wchar_t *cfgPath){
+  if(!out||outn<=0) return 0;
+  out[0]=0;
+  char u8[3072];
+  int n=w_to_u8(cfgPath?cfgPath:L"",u8,sizeof u8);
+  if(n<0) n=0;
+  static const char HEX[]="0123456789ABCDEF";
+  wchar_t enc[8192]; int e=0;
+  for(int i=0;i<n;i++){
+    unsigned char c=(unsigned char)u8[i];
+    if((c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||
+       c=='-'||c=='.'||c=='_'||c=='~'){
+      if(e>=8191) break;
+      enc[e++]=(wchar_t)c;
+    }else{
+      if(e+3>=8192) break;
+      enc[e++]=L'%';
+      enc[e++]=(wchar_t)HEX[c>>4];
+      enc[e++]=(wchar_t)HEX[c&15];
+    }
+  }
+  enc[e]=0;
+  /* 先算总长再写：缓冲不够就保持 out[0]=0 原样返回失败，
+     别留下半个 URL 让 ShellExecute 去打开一个错地址。 */
+  size_t need=wcslen(ABOUT_PAGE_BASE)+1+wcslen(KP_VERSION_W)+1+(size_t)e+1;
+  if(need>(size_t)outn) return 0;
+  int r=_snwprintf(out,outn,L"%ls#%ls&%ls",ABOUT_PAGE_BASE,KP_VERSION_W,enc);
+  return r>0 && r<outn;
+}
+
 #ifndef RENDER_TEST
 /* ---- 读注册表（仅用于旧版本设置迁移 / 自启项） ---- */
 int reg_get_dword(const wchar_t *name, DWORD *out){
