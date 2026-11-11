@@ -30,8 +30,8 @@ KimiPet_源码与程序
 
 ## 二、环境
 
-- 软件源被封、工具装不上时，**换腾讯镜像** `mirrors.tencent.com`，不要尝试外网源
-- 沙盒环境会不定期重置（apt 源、mingw 都会丢），执行 `/data/workspace/setup_env.sh` 一键恢复
+- **本地沙盒**（`setup_env.sh` 装 mingw / wine）软件源被封时换腾讯镜像 `mirrors.tencent.com`，别试外网源；沙盒会不定期重置（apt 源、mingw 都会丢），执行 `/data/workspace/setup_env.sh` 一键恢复
+- **CI（`.github/workflows/release.yml`）恰好相反，绝不能换国内源**：Runner 在海外 Azure 机房，跨国路由只会更慢。默认指向 `azure.archive.ubuntu.com`，节点路由抽风或镜像同步时，下载 35MB 级 mingw 大包会假死。做法是①把源替换成官方主源 `archive.ubuntu.com`（同时处理老版 `sources.list` 和 24.04 的 deb822 `ubuntu.sources`），②用 `actions/cache@v4` 缓存 `/var/cache/apt/archives/*.deb`（前置 `sudo chmod -R a+rwX` 让 cache action 能写，key 带手动失效位 `v1`，Runner 基础镜像大版本升级时 bump）。两条都别和本地沙盒的镜像策略混用。
 - 编译用 `cd src && sh build.sh`；验证用 wine 实跑 exe，不能只做语法检查
 
 ## 三、配置系统（KimiPet.ini）
@@ -90,11 +90,13 @@ KimiPet_源码与程序
 - **bat 里定位文件别用带引号的通配符，也别依赖 `pushd`**：`for %%f in ("%~dp0*.exe")` 拿到的是字面字符串，不展开；而 `pushd` 在部分 cmd / wine 环境会直接失败（实测 `PUSHD FAILED`）。可靠写法是 `dir /b /o-d "路径\*.exe" 2^>nul` 配 `for /f "delims="`，再自己拼全路径、`%%~ff` 取绝对路径。曾经因此找不到旧文件名 `MiniPet_x64.exe`。
 - **所有 `.bat` 必须纯 ASCII**：注释、`echo`、`title`、`REM` 一律英文，不写中文、不用全角标点，也不要 `chcp 65001`（部分 cmd 代码页下 bat 文件按 ANSI 解析，一个中文就可能整段失效）。交付前用「字节 ≥ 128 计数为 0」校验，包括 `KimiPetUpdater.bat` 和 `build.bat`。**程序运行时生成的覆盖 bat 同样适用**：用 `CP_OEMCP` 编码、不加 chcp，否则中文路径在 GBK cmd 下乱码、`copy` 静默失败。
 - **`docs/index.html` 里的小圆球用桌面版 Canvas 网页原型，别再手搓 SVG**：球面投影眼睛、果冻形变、眨眼、按住注视、连点 5 次生气、5 层渐变都要按原型来。原型原本是全屏 canvas，嵌进介绍页必须做四处局部化：收进 `.stage` 容器、resize 用舞台 rect、指针坐标换成相对 canvas 的局部坐标、去掉铺满全屏的白色 `fillRect` 改成 `clearRect` 透明。`touch-action:none` 只能加在 `.stage` 上，加到 `body` 会让整页没法滚动。换色走独立色点，别占用球本身的点击（那是「逗它」）。
+- **两个 HTML 页面都要适配各种屏幕，别只顾桌面**：`docs/index.html` 和 `docs/downloads/index.html` 都是单文件、零外部资源。流式尺寸用 `clamp()`，列用 `repeat(auto-fit,minmax(min(100%,Npx),1fr))`（`minmax(250px,1fr)` 在窄屏会溢出），表格套 `.table-wrap{overflow-x:auto}` 且在 ≤720px 拆成卡片（`td::before` 读 `data-label`），断点覆盖 320 / 360 / 480 / 720 / 900 / 1600px、横屏矮屏、超宽屏、`prefers-color-scheme:dark`、`prefers-reduced-motion`、打印，还要带 `env(safe-area-inset-*)` 和 `text-size-adjust:100%`。canvas 舞台用 `aspect-ratio:1/1` + `clamp()`，除 `window.resize` 外要挂 `ResizeObserver`（字体加载/滚动条/分屏不会触发 resize）。交付前用 Chromium 在 ≥10 个视口实测 `scrollWidth-clientWidth == 0`、球有像素、JS 零错误。
+- **`/downloads/` 表格由 CI 生成，绝不手工编辑**：`docs/downloads/index.html` 里用 `<!-- DOWNLOADS_HERO_BEGIN/END -->`、`<!-- DOWNLOADS_META_BEGIN/END -->`、`<!-- DOWNLOADS_ROWS_BEGIN/END -->` 三对标记包住动态内容。`.github/scripts/gen_downloads.py` 每次 push（含分支 push，与「只有 tag 才打包」不冲突，它只写文档）从 Releases API 拉全部非 draft 版本，写每个附件的 `browser_download_url` 直链，再用 contents API 写回默认分支；内容相同不提交，消息带 `[skip ci]`（GITHUB_TOKEN 创建的 commit 本来也不触发 workflow）。**写回时若远端页面已有标记，必须用远端内容当模板**，否则 tag 打在旧 commit 上会把 main 上更新的样式覆盖掉。draft 要排除、prerelease 要标注、只有 zip 的老版本要如实写「早期版本只提供 zip」、tag/URL 一律 HTML 转义。页面里预置当前真实数据，保证 CI 没跑时离线打开也有内容。
 - **功能卡图标用内嵌的 Microsoft Fluent Emoji 3D PNG，不用字符 emoji**：从 `microsoft/fluentui-emoji` 的 `assets/<Name>/3D/<name>_3d.png` 取（jsDelivr 的 `cdn.jsdelivr.net/gh/...` 可下，`raw.githubusercontent.com` 在沙盒里不通），缩到 72×72 再 base64 内嵌进 `docs/index.html`，保持单文件离线可看、零外部请求。目录名是 CLDR 短名（`Sleeping face` / `Counterclockwise arrows button`，不是 Sleeping Face），写错会 404。别用字符 emoji 顶替 —— 各平台字体渲染不一致。
 - **「关于 kimi 小圆球」直接打开介绍页，别弹信息框**：URL 形如 `https://minecraftgoose.github.io/kimi-pet/#<版本>&<配置文件路径>`。路径必须 UTF-8 percent-encoding，让 `decodeURIComponent` 能还原中文/空格/反斜杠，且 `&` `#` 要编码成 `%26` `%23`，否则网页解析会断在第一个 `&`。`about_url_build()` 放 `util.c`（纯字符串函数，RENDER_TEST 可断言），先算总长再写，缓冲不够就保持 `out[0]=0` 返回失败，别留半个 URL。网页端解析 hash 并在页面**最顶部**显示「来自本机的 kimi 小圆球」信息条（版本 + 配置路径 + 版本不一致提示），同时监听 `hashchange`；不带 hash 时完全隐藏。打开失败只显示 URL 与 Win32 错误码。
 - **页脚别堆成几行散 `<p>`**：`.foot-top` 用 flex 两栏（左品牌+版权，右导航链接），下面单独一行 `.foot-note` 放免责声明，移动端堆叠。
 - **版本号显示带 `v` 前缀**（`v1.4.6`），比较用数字宏不影响。
-- **发版必须打 tag** 才会触发 Release；只 push 分支只会构建不发布。
+- **发版必须打 tag，且只有 tag / `workflow_dispatch` 才「打包」**：`release.yml` 里 `should_package` 控制「整理产物 + 上传 Artifacts」，`should_release` 控制「发 Release」，两个 output 分开写，别图省事共用一个。分支 push → 只编译 + 检查产物（编译校验仍要做），`dist/` 不生成、不传 Artifacts、不发布；tag push / dispatch → 全做。幂等跳过（同名 Release 已存在且附件齐全）只把 `should_release` 置 false，**`should_package` 保持 true**，产物包照样生成方便对照。早期版本曾用 `should_release` 兼管打包，结果重跑同名 tag 时连 Artifact 都消失。
 - **Release 附件平铺、不打包 zip**；必须有独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`（「检查更新」按架构名找），外加 `KimiPetUpdater.bat` 供老版本用户手动升级。
 - **老 .NET 没有 `Tls12` 具名枚举**：PowerShell 2.0 / .NET 3.5 的 `SecurityProtocolType` 只有 `Ssl3`、`Tls`，写 `[Net.SecurityProtocolType]::Tls12` 会在赋值阶段抛 `PropertyAssignmentException`（报错「可能的枚举值为 Ssl3、Tls」），下载还没开始就死。用数值 `3072` 经 `[Enum]::ToObject([Net.SecurityProtocolType],3072)` 设置并包 try/catch；兜底顺序里优先 Win7+ 自带的 `certutil.exe`（走系统 HTTP 栈，不受 .NET 版本限制）。
 - **CI 按 tag 检出，推 main 不影响已打的 tag**：workflow 里有「切到目标 tag 的代码」步骤（`git checkout --force refs/tags/$TAG`），产物（含 `KimiPetUpdater.bat` 附件）全部来自那个 tag 的 commit。把最新代码推到 main、却拿旧 tag 触发构建，发出来的仍是旧附件，而且 CI 一路绿灯。**发版 tag 必须打在包含最新代码的 commit 上**，或删掉旧 tag 重打。「整理产物」步骤已加 `grep -q 'call :scan'` 校验，遇到旧 bat 直接 `::error::` 拦下。

@@ -3,9 +3,13 @@ name: 构建并发布
 # ───────────────────────────────────────────────────────────────
 # 触发方式
 #
-#   1. push tag          打 tag 推送 → 构建并发布 Release
-#   2. push 分支         只构建校验，不发布
-#   3. workflow_dispatch 手动指定 tag 补发 / 强制重发
+#   1. push tag          打 tag 推送 → 编译 → 整理产物 → 传 Artifacts → 发布 Release
+#   2. push 分支         只编译校验：不整理 dist、不传 Artifacts、不发布（不「打包」）
+#   3. workflow_dispatch 手动指定 tag 补发 / 强制重发，与 tag 同等对待
+#
+# 「打包」= 整理产物 + 上传 Artifacts，由 should_package 控制；「发布」= 发 Release，
+# 由 should_release 控制。两者分开是因为幂等跳过（同名 Release 已存在）只停发布，
+# tag 触发本身仍应把产物打出来方便对照。
 #
 # 注意：tags 用 '**' 而不是 'v*' —— 这是 glob 匹配，写 v* 的话 v 以外的 tag 一律漏掉。
 # ───────────────────────────────────────────────────────────────
@@ -59,7 +63,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          TAG=""; RELEASE="false"
+          TAG=""; RELEASE="false"; PACKAGE="false"
 
           # checkout 只拉当前 ref，本地未必有全部 tag，直接查远端。
           # sort -V 是版本排序：v1.10 必须排在 v1.9 之后，字典序会排反。
@@ -77,14 +81,14 @@ jobs:
               echo "::error::仓库里没有任何 tag，也没指定 tag，没法发布"
               exit 1
             fi
-            RELEASE="true"
+            RELEASE="true"; PACKAGE="true"
           elif [ "$REF_TYPE" = "tag" ]; then
             TAG="$REF_NAME"
-            RELEASE="true"
+            RELEASE="true"; PACKAGE="true"
           else
             TAG="dev"
-            RELEASE="false"
-            echo "::warning::分支 push → 只构建校验，不发布。要发布请打 tag 再推送。"
+            RELEASE="false"; PACKAGE="false"
+            echo "::notice::分支 push → 只编译校验，不整理产物、不传 Artifacts、不发布。要发版请打 tag 再推送。"
           fi
 
           [ -z "$TAG" ] && TAG="dev"
@@ -99,9 +103,10 @@ jobs:
             fi
           fi
 
-          echo "tag=$TAG"              >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"                >> "$GITHUB_OUTPUT"
+          echo "should_package=$PACKAGE" >> "$GITHUB_OUTPUT"
           echo "should_release=$RELEASE" >> "$GITHUB_OUTPUT"
-          echo "==> tag=$TAG  should_release=$RELEASE"
+          echo "==> tag=$TAG  should_package=$PACKAGE  should_release=$RELEASE"
 
       # 手动补发时 checkout 检的是默认分支 HEAD，可能已经前进了；
       # 显式切到目标 tag，保证编出来的 exe 和 Release 的 tag 对应。
@@ -113,6 +118,43 @@ jobs:
         run: |
           git fetch --no-tags --force origin "refs/tags/$TAG:refs/tags/$TAG"
           git checkout --force "refs/tags/$TAG"
+
+      # ── apt 源与缓存 ────────────────────────────────────────────────
+      # GitHub 托管 Runner 默认指向 azure.archive.ubuntu.com，节点路由抽风或
+      # 该镜像正在同步时，下载 35MB 级的 mingw 大包会「假死」。这里换回官方
+      # 主源走普通公网路由，并缓存已下载的 .deb —— 别换国内源：Runner 在
+      # 海外 Azure 机房，跨国路由只会更慢。
+      - name: 准备 apt 缓存目录
+        run: |
+          # /var/cache/apt/archives 默认属 root:root 且 runner 用户不可写，
+          # actions/cache 恢复时会 Permission denied。临时 Runner 上放开即可。
+          sudo mkdir -p /var/cache/apt/archives/partial
+          sudo chmod -R a+rwX /var/cache/apt/archives
+
+      - name: 缓存 apt 包
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives/*.deb
+          key: v1-${{ runner.os }}-${{ runner.arch }}-apt-mingw-${{ hashFiles('.github/workflows/release.yml') }}
+          restore-keys: |
+            v1-${{ runner.os }}-${{ runner.arch }}-apt-mingw-
+          # 只缓存 .deb，不带 lock / partial。首次构建无匹配文件只会 warn，不失败。
+          # key 里的 v1 是手动失效位：Runner 基础镜像大版本升级后 bump 一下。
+
+      - name: 切换到 Ubuntu 官方主源
+        run: |
+          # 兼容两种格式：老版 sources.list，以及 24.04 起用的 deb822
+          # /etc/apt/sources.list.d/ubuntu.sources（URIs: 字段）。
+          sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' \
+            /etc/apt/sources.list 2>/dev/null || true
+          if [ -d /etc/apt/sources.list.d ]; then
+            sudo find /etc/apt/sources.list.d -type f \
+              \( -name '*.list' -o -name '*.sources' \) \
+              -exec sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' {} +
+          fi
+          echo '--- 当前生效的 ubuntu 源 ---'
+          grep -RhE '^[[:space:]]*(deb |URIs:)' \
+            /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null | head -8 || true
 
       - name: 安装 mingw-w64 交叉编译器
         run: |
@@ -136,7 +178,9 @@ jobs:
           test -s "$EXE_DIR/KimiPet_x64.exe" || { echo "64 位产物为空"; exit 1; }
           test -s "$EXE_DIR/KimiPet_x86.exe" || { echo "32 位产物为空"; exit 1; }
 
+      # 分支 push 到此为止：dist/ 不生成，也就没有后面的 Artifact 包。
       - name: 整理产物
+        if: steps.meta.outputs.should_package == 'true'
         run: |
           set -euo pipefail
 
@@ -168,6 +212,7 @@ jobs:
           cat "$DIST/SHA256SUMS.txt"
 
       - name: 上传构建产物（Artifacts）
+        if: steps.meta.outputs.should_package == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: KimiPet-${{ steps.meta.outputs.tag }}
@@ -177,6 +222,8 @@ jobs:
             dist/SHA256SUMS.txt
           if-no-files-found: error
 
+      # 注意：这里用 should_release 而不是 should_package —— 同名 Release
+      # 已存在且附件齐全时会跳过发布，但上面的产物包照常生成。
       - name: 发布到 Release
         if: steps.meta.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
@@ -192,13 +239,57 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # ── 历代下载页 ─────────────────────────────────────────────────
+      # 无论分支 push 还是 tag push 都跑：从 Releases API 重新拉一遍全部
+      # 正式发行版，把每个附件的直链写进 docs/downloads/index.html 的表格，
+      # 再用 contents API 写回默认分支（内容相同就不产生空 commit）。
+      #
+      # 这不违反「分支 push 不打包」：这里只同步一页静态文档，不生成 dist、
+      # 不传 Artifacts、不发 Release。tag push 时它排在「发布到 Release」
+      # 之后，所以刚发出来的那版会立刻出现在表格里。
+      #
+      # 用 GITHUB_TOKEN 经 API 创建的 commit 不会触发新的 workflow run，
+      # 消息里再带 [skip ci] 双保险，避免自己把自己叫起来无限循环。
+      - name: 同步历代下载页
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DOCS_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          SCRIPT="$GITHUB_WORKSPACE/.github/scripts/gen_downloads.py"
+          TPL="$GITHUB_WORKSPACE/docs/downloads/index.html"
+          if [ ! -f "$SCRIPT" ] || [ ! -f "$TPL" ]; then
+            echo "::error::缺 gen_downloads.py 或 docs/downloads/index.html —— tag 是否打在旧 commit 上？"
+            exit 1
+          fi
+          grep -q 'DOWNLOADS_ROWS_BEGIN' "$TPL" || {
+            echo "::error::下载页模板缺表格标记，无法生成"; exit 1;
+          }
+          BRANCH="${DOCS_BRANCH:-main}"
+          LATEST="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)"
+          echo "默认分支=$BRANCH  latest=$LATEST"
+          python3 "$SCRIPT" \
+            --template "$TPL" \
+            --out "${{ runner.temp }}/downloads.html" \
+            --repo "$GITHUB_REPOSITORY" \
+            --branch "$BRANCH" \
+            --latest-tag "$LATEST" \
+            --publish
+          echo "--- 生成结果 ---"
+          grep -c 'releases/download/' "${{ runner.temp }}/downloads.html" || true
+
       - name: 小结
         env:
           TAG: ${{ steps.meta.outputs.tag }}
+          PACKAGED: ${{ steps.meta.outputs.should_package }}
           RELEASED: ${{ steps.meta.outputs.should_release }}
         run: |
           echo "tag      : $TAG"
+          echo "已打包   : $PACKAGED"
           echo "已发布   : $RELEASED"
-          if [ "$RELEASED" != "true" ]; then
-            echo "::notice::本次未发布。要发布：打 tag 推送，或 Actions → 本工作流 → Run workflow → 填 tag 名。"
+          if [ "$PACKAGED" != "true" ]; then
+            echo "::notice::分支 push：只编译校验，未整理产物、未上传 Artifacts、未发布。要发版：打 tag 推送，或 Actions → 本工作流 → Run workflow → 填 tag 名。"
+          elif [ "$RELEASED" != "true" ]; then
+            echo "::notice::产物已打包并上传 Artifacts，但同名 Release 已存在且附件齐全 → 跳过发布。需要重发请用 Run workflow 勾 force。"
           fi
