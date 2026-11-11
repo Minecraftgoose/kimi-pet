@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>历代下载 · kimi小圆球</title>
 <meta name="description" content="kimi小圆球历代版本的 exe、bat 与校验文件直链，由 CI 在每次 push 时自动同步。">
+<link rel="icon" type="image/x-icon" href="../favicon.ico">
 <style>
   :root{
     color-scheme:light;--wrap:1080px;--pad:clamp(16px,4vw,32px);
@@ -99,6 +100,7 @@
             gap:12px;flex-wrap:wrap}
   .foot-links{display:flex;gap:clamp(12px,3vw,18px);flex-wrap:wrap}
   .foot-links a{display:inline-block;padding:4px 0;min-height:32px}
+  .brand-ico{width:20px;height:20px;vertical-align:-4px;margin-right:6px;border-radius:5px}
 
   /* ---------- 各种屏幕 ---------- */
   @media (min-width:1600px){:root{--wrap:1180px}}
@@ -157,7 +159,7 @@
   <a class="back" href="../">← 回到介绍页</a>
   <h1>历代下载</h1>
   <p class="lead">每个版本附件的<strong>直链</strong>都列在下面，点一下直接下载，不用进 Releases 页面翻。
-    这张表由 CI 在每次 push 时从 GitHub Releases API 重新生成；本页面是单个 HTML，断网也能看已经同步过的内容。</p>
+    这张表由 CI 在每次 push 时从 GitHub Releases API 重新生成，版本号与直链都以线上 Release 为准。</p>
 </header>
 
 <main class="wrap">
@@ -174,7 +176,7 @@
 <!-- DOWNLOADS_HERO_END -->
 
   <p class="sync"><!-- DOWNLOADS_META_BEGIN -->
-共 14 个版本 · 最近同步 2026-11-11 13:47 UTC · 表格由 CI 在每次 push 时自动更新
+共 14 个版本 · 最近同步 2026-11-11 13:11 UTC · 表格由 CI 在每次 push 时自动更新
 <!-- DOWNLOADS_META_END --></p>
 
   <div class="table-wrap">
@@ -317,7 +319,7 @@
 
 <footer class="wrap">
   <div class="foot-top">
-    <div><strong>kimi小圆球</strong> · MIT License · © 2026 Minecraftgoose</div>
+    <div><strong><img class="brand-ico" src="../favicon.ico" alt="kimi小圆球图标">kimi小圆球</strong> · MIT License · © 2026 Minecraftgoose</div>
     <nav class="foot-links">
       <a href="../">介绍页</a>
       <a href="https://github.com/Minecraftgoose/kimi-pet/releases">Releases</a>
