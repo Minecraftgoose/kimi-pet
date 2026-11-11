@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>历代下载 · kimi小圆球</title>
+<meta name="description" content="kimi小圆球历代版本的 exe、bat 与校验文件直链，由 CI 在每次 push 时自动同步。">
+<style>
+  :root{
+    color-scheme:light;--wrap:1080px;--pad:clamp(16px,4vw,32px);
+    --accent:#4a86d8;--ink:#1b2b45;--sub:#5a6b85;--line:#dfe8f6;
+    --card:#fff;--bg:#f4f8ff;--glow:#dceaff;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth;scroll-padding-top:20px;
+       -webkit-text-size-adjust:100%;text-size-adjust:100%}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",
+       "PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+       color:var(--ink);line-height:1.7;-webkit-font-smoothing:antialiased;
+       background:radial-gradient(900px 520px at 50% -10%,var(--glow),transparent 70%),var(--bg)}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{width:100%;max-width:var(--wrap);margin:0 auto;
+        padding-left:max(var(--pad),env(safe-area-inset-left));
+        padding-right:max(var(--pad),env(safe-area-inset-right))}
+
+  /* ---------- 头部 ---------- */
+  .top{padding:clamp(24px,5vw,48px) 0 clamp(14px,3vw,24px)}
+  .back{display:inline-block;font-size:14px;min-height:32px;padding:4px 0}
+  h1{font-size:clamp(26px,5vw,36px);margin:12px 0 6px;letter-spacing:.02em}
+  .lead{color:var(--sub);font-size:clamp(14px,2vw,16px);
+        margin:0 0 clamp(18px,3vw,28px);max-width:680px}
+  .sync{font-size:13px;color:var(--sub);margin:0 0 12px}
+
+  /* ---------- 当前最新 ---------- */
+  .latest-card{
+    display:flex;align-items:center;justify-content:space-between;gap:20px;
+    flex-wrap:wrap;background:var(--card);border:1px solid var(--line);
+    border-radius:18px;padding:clamp(18px,3vw,26px);
+    box-shadow:0 6px 24px rgba(43,78,133,.07);margin-bottom:clamp(18px,3vw,28px)
+  }
+  .latest-info h2{font-size:clamp(22px,4vw,30px);margin:6px 0 2px}
+  .latest-info p{margin:0;color:var(--sub);font-size:13px}
+  .latest-links{display:flex;gap:10px;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;justify-content:center;
+       min-height:44px;padding:10px clamp(14px,2.5vw,22px);border-radius:12px;
+       font-size:14px;font-weight:600;border:1px solid var(--line);
+       background:var(--card);color:var(--ink);transition:transform .15s}
+  .btn:hover{transform:translateY(-2px);text-decoration:none}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.ghost{background:transparent}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;
+       padding:2px 9px;border-radius:999px;vertical-align:middle;margin-left:6px}
+  .tag.latest{background:rgba(74,134,216,.14);color:var(--accent)}
+  .tag.pre{background:rgba(220,140,60,.16);color:#a05a1c}
+
+  /* ---------- 表格 ---------- */
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;
+              border-radius:16px;max-width:100%}
+  table{width:100%;min-width:820px;border-collapse:collapse;background:var(--card);
+        border:1px solid var(--line);border-radius:16px;overflow:hidden;
+        font-size:clamp(13px,1.6vw,14px)}
+  th,td{text-align:left;vertical-align:top;
+        padding:clamp(10px,1.8vw,14px) clamp(10px,1.8vw,16px);
+        border-bottom:1px solid var(--line)}
+  th{background:rgba(74,134,216,.06);font-size:12px;color:var(--sub);font-weight:700;
+     white-space:nowrap}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:rgba(74,134,216,.035)}
+  td code{background:rgba(74,134,216,.10);color:var(--accent);
+          padding:2px 7px;border-radius:6px;font-size:.95em;font-weight:600;
+          font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+  .cell{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+  td[data-label="发布日期"] .cell{white-space:nowrap}
+  @media (min-width:721px){td[data-label="版本"] .cell{flex-wrap:nowrap}}
+  .file{display:inline-flex;flex-direction:column;min-width:0}
+  .file a{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+          font-size:12px;word-break:break-all;overflow-wrap:anywhere;line-height:1.4}
+  .file .sz{font-size:11px;color:var(--sub);white-space:nowrap}
+  .none{color:var(--sub);opacity:.6}
+  .note{display:block;width:100%;font-size:11px;color:var(--sub);opacity:.85}
+  .copy{flex:none;border:1px solid var(--line);background:transparent;
+        color:var(--sub);border-radius:7px;padding:3px 8px;font-size:11px;
+        cursor:pointer;min-height:28px;font-family:inherit}
+  .copy:hover{border-color:var(--accent);color:var(--accent)}
+  .go{font-size:12px;white-space:nowrap}
+  .empty{text-align:center;color:var(--sub);padding:28px!important}
+
+  /* ---------- 说明 / 页脚 ---------- */
+  .notes{margin-top:clamp(22px,4vw,34px);font-size:14px;color:var(--sub)}
+  .notes h2{font-size:clamp(18px,3vw,21px);margin:0 0 8px;color:var(--ink)}
+  .notes ul{padding-left:20px;margin:0 0 6px}
+  .notes li{margin-bottom:6px}
+  .notes code{word-break:break-all;overflow-wrap:anywhere}
+  footer{border-top:1px solid var(--line);margin-top:34px;
+         padding:22px 0 max(36px,env(safe-area-inset-bottom));
+         font-size:13px;color:var(--sub)}
+  .foot-top{display:flex;align-items:baseline;justify-content:space-between;
+            gap:12px;flex-wrap:wrap}
+  .foot-links{display:flex;gap:clamp(12px,3vw,18px);flex-wrap:wrap}
+  .foot-links a{display:inline-block;padding:4px 0;min-height:32px}
+
+  /* ---------- 各种屏幕 ---------- */
+  @media (min-width:1600px){:root{--wrap:1180px}}
+  /* 手机：表格拆成每张卡片，不再左右横滑 */
+  @media (max-width:720px){
+    .latest-card{flex-direction:column;align-items:flex-start}
+    .latest-links{width:100%}
+    .latest-links .btn{flex:1 1 130px}
+    table,tbody,tr,td{display:block;min-width:0}
+    thead{display:none}
+    .table-wrap{overflow:visible}
+    table{background:transparent;border:0;border-radius:0}
+    tbody tr{background:var(--card);border:1px solid var(--line);
+             border-radius:14px;margin-bottom:12px;padding:6px 0;overflow:hidden}
+    tbody tr:last-child td{border-bottom:1px solid var(--line)}
+    td{border-bottom:1px solid var(--line);
+       display:flex;align-items:flex-start;gap:12px;
+       padding:8px clamp(12px,3vw,16px)}
+    td::before{content:attr(data-label);flex:none;width:76px;
+               font-size:12px;font-weight:700;color:var(--sub);padding-top:2px}
+    td .cell{flex:1;min-width:0;justify-content:flex-end;text-align:right}
+    td .file{align-items:flex-end}
+    .note{text-align:right}
+  }
+  @media (max-width:480px){
+    .wrap{padding-left:max(14px,env(safe-area-inset-left));
+          padding-right:max(14px,env(safe-area-inset-right))}
+    .latest-links .btn{width:100%;flex:none}
+    td::before{width:64px;font-size:11px}
+    .foot-top{flex-direction:column;align-items:flex-start}
+  }
+  @media (max-width:360px){td::before{width:56px}}
+  @media (prefers-color-scheme:dark){
+    :root{color-scheme:dark;--ink:#e8f0fc;--sub:#9db0cc;--line:#2a3a54;
+          --card:#18263e;--bg:#101a2c;--glow:#1d3358}
+    .latest-card,.btn{box-shadow:none}
+    .copy:hover{border-color:var(--accent)}
+  }
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{transition-duration:.01ms!important}
+  }
+  @media print{
+    :root{--bg:#fff;--card:#fff}
+    body{background:#fff}
+    .latest-links,.copy,.foot-links{display:none!important}
+    .table-wrap{overflow:visible}
+    table{min-width:0}
+    tbody tr,.latest-card{box-shadow:none;break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+
+<header class="top wrap">
+  <a class="back" href="../">← 回到介绍页</a>
+  <h1>历代下载</h1>
+  <p class="lead">每个版本附件的<strong>直链</strong>都列在下面，点一下直接下载，不用进 Releases 页面翻。
+    这张表由 CI 在每次 push 时从 GitHub Releases API 重新生成；本页面是单个 HTML，断网也能看已经同步过的内容。</p>
+</header>
+
+<main class="wrap">
+
+<!-- DOWNLOADS_HERO_BEGIN -->
+    <div class="latest-card">
+      <div class="latest-info">
+        <span class="tag latest">当前最新</span>
+        <h2>v1.4.6</h2>
+        <p>2026-11-10 · 4 个附件</p>
+      </div>
+      <div class="latest-links"><a class="btn primary" href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/KimiPet_x64.exe">下载 64 位</a><a class="btn" href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/KimiPet_x86.exe">下载 32 位</a><a class="btn ghost" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.4.6">发行说明</a></div>
+    </div>
+<!-- DOWNLOADS_HERO_END -->
+
+  <p class="sync"><!-- DOWNLOADS_META_BEGIN -->
+共 14 个版本 · 最近同步 2026-11-11 13:11 UTC · 表格由 CI 在每次 push 时自动更新
+<!-- DOWNLOADS_META_END --></p>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>版本</th><th>发布日期</th><th>64 位</th><th>32 位</th><th>其它附件</th><th>发行页</th></tr>
+    </thead>
+    <tbody>
+<!-- DOWNLOADS_ROWS_BEGIN -->
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.4.6</code><span class="tag latest">Latest</span></div></td>
+        <td data-label="发布日期"><div class="cell">2026-11-10</div></td>
+        <td data-label="64 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/KimiPet_x64.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/KimiPet_x64.exe">KimiPet_x64.exe</a><span class="sz">476 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/KimiPet_x64.exe" aria-label="复制 KimiPet_x64.exe 的直链">复制</button></div></td>
+        <td data-label="32 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/KimiPet_x86.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/KimiPet_x86.exe">KimiPet_x86.exe</a><span class="sz">449 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/KimiPet_x86.exe" aria-label="复制 KimiPet_x86.exe 的直链">复制</button></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/KimiPetUpdater.bat" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/KimiPetUpdater.bat">KimiPetUpdater.bat</a><span class="sz">6 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/KimiPetUpdater.bat" aria-label="复制 KimiPetUpdater.bat 的直链">复制</button><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.6/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.4.6">查看</a></div></td>
+      </tr>
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.4.5</code></div></td>
+        <td data-label="发布日期"><div class="cell">2026-11-10</div></td>
+        <td data-label="64 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.5/KimiPet_x64.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.5/KimiPet_x64.exe">KimiPet_x64.exe</a><span class="sz">475 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.5/KimiPet_x64.exe" aria-label="复制 KimiPet_x64.exe 的直链">复制</button></div></td>
+        <td data-label="32 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.5/KimiPet_x86.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.5/KimiPet_x86.exe">KimiPet_x86.exe</a><span class="sz">448 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.5/KimiPet_x86.exe" aria-label="复制 KimiPet_x86.exe 的直链">复制</button></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.5/KimiPetUpdater.bat" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.5/KimiPetUpdater.bat">KimiPetUpdater.bat</a><span class="sz">6 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.5/KimiPetUpdater.bat" aria-label="复制 KimiPetUpdater.bat 的直链">复制</button><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.5/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.5/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.5/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.4.5">查看</a></div></td>
+      </tr>
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.4.4</code></div></td>
+        <td data-label="发布日期"><div class="cell">2026-11-09</div></td>
+        <td data-label="64 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.4/KimiPet_x64.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.4/KimiPet_x64.exe">KimiPet_x64.exe</a><span class="sz">473 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.4/KimiPet_x64.exe" aria-label="复制 KimiPet_x64.exe 的直链">复制</button></div></td>
+        <td data-label="32 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.4/KimiPet_x86.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.4/KimiPet_x86.exe">KimiPet_x86.exe</a><span class="sz">446 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.4/KimiPet_x86.exe" aria-label="复制 KimiPet_x86.exe 的直链">复制</button></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.4/KimiPetUpdater.bat" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.4/KimiPetUpdater.bat">KimiPetUpdater.bat</a><span class="sz">6 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.4/KimiPetUpdater.bat" aria-label="复制 KimiPetUpdater.bat 的直链">复制</button><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.4/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.4/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.4/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.4.4">查看</a></div></td>
+      </tr>
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.4.3</code></div></td>
+        <td data-label="发布日期"><div class="cell">2026-11-08</div></td>
+        <td data-label="64 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.3/KimiPet_x64.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.3/KimiPet_x64.exe">KimiPet_x64.exe</a><span class="sz">467 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.3/KimiPet_x64.exe" aria-label="复制 KimiPet_x64.exe 的直链">复制</button></div></td>
+        <td data-label="32 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.3/KimiPet_x86.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.3/KimiPet_x86.exe">KimiPet_x86.exe</a><span class="sz">439 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.3/KimiPet_x86.exe" aria-label="复制 KimiPet_x86.exe 的直链">复制</button></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.3/KimiPetUpdater.bat" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.3/KimiPetUpdater.bat">KimiPetUpdater.bat</a><span class="sz">6 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.3/KimiPetUpdater.bat" aria-label="复制 KimiPetUpdater.bat 的直链">复制</button><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.3/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.3/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.3/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.4.3">查看</a></div></td>
+      </tr>
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.4.2</code></div></td>
+        <td data-label="发布日期"><div class="cell">2026-11-08</div></td>
+        <td data-label="64 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.2/KimiPet_x64.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.2/KimiPet_x64.exe">KimiPet_x64.exe</a><span class="sz">467 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.2/KimiPet_x64.exe" aria-label="复制 KimiPet_x64.exe 的直链">复制</button></div></td>
+        <td data-label="32 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.2/KimiPet_x86.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.2/KimiPet_x86.exe">KimiPet_x86.exe</a><span class="sz">439 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.2/KimiPet_x86.exe" aria-label="复制 KimiPet_x86.exe 的直链">复制</button></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.2/KimiPetUpdater.bat" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.2/KimiPetUpdater.bat">KimiPetUpdater.bat</a><span class="sz">6 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.2/KimiPetUpdater.bat" aria-label="复制 KimiPetUpdater.bat 的直链">复制</button><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.2/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.2/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.2/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.4.2">查看</a></div></td>
+      </tr>
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.4.1</code></div></td>
+        <td data-label="发布日期"><div class="cell">2026-11-08</div></td>
+        <td data-label="64 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.1/KimiPet_x64.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.1/KimiPet_x64.exe">KimiPet_x64.exe</a><span class="sz">467 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.1/KimiPet_x64.exe" aria-label="复制 KimiPet_x64.exe 的直链">复制</button></div></td>
+        <td data-label="32 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.1/KimiPet_x86.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.1/KimiPet_x86.exe">KimiPet_x86.exe</a><span class="sz">439 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.1/KimiPet_x86.exe" aria-label="复制 KimiPet_x86.exe 的直链">复制</button></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.1/KimiPetUpdater.bat" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.1/KimiPetUpdater.bat">KimiPetUpdater.bat</a><span class="sz">6 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.1/KimiPetUpdater.bat" aria-label="复制 KimiPetUpdater.bat 的直链">复制</button><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.1/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.1/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4.1/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.4.1">查看</a></div></td>
+      </tr>
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.4</code></div></td>
+        <td data-label="发布日期"><div class="cell">2026-11-08</div></td>
+        <td data-label="64 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4/KimiPet_x64.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4/KimiPet_x64.exe">KimiPet_x64.exe</a><span class="sz">465 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4/KimiPet_x64.exe" aria-label="复制 KimiPet_x64.exe 的直链">复制</button></div></td>
+        <td data-label="32 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4/KimiPet_x86.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4/KimiPet_x86.exe">KimiPet_x86.exe</a><span class="sz">437 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4/KimiPet_x86.exe" aria-label="复制 KimiPet_x86.exe 的直链">复制</button></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4/KimiPetUpdater.bat" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4/KimiPetUpdater.bat">KimiPetUpdater.bat</a><span class="sz">2 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4/KimiPetUpdater.bat" aria-label="复制 KimiPetUpdater.bat 的直链">复制</button><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.4/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.4">查看</a></div></td>
+      </tr>
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.3.3</code></div></td>
+        <td data-label="发布日期"><div class="cell">2026-11-06</div></td>
+        <td data-label="64 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.3/KimiPet_x64.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.3/KimiPet_x64.exe">KimiPet_x64.exe</a><span class="sz">462 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.3/KimiPet_x64.exe" aria-label="复制 KimiPet_x64.exe 的直链">复制</button></div></td>
+        <td data-label="32 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.3/KimiPet_x86.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.3/KimiPet_x86.exe">KimiPet_x86.exe</a><span class="sz">433 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.3/KimiPet_x86.exe" aria-label="复制 KimiPet_x86.exe 的直链">复制</button></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.3/KimiPetUpdater.bat" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.3/KimiPetUpdater.bat">KimiPetUpdater.bat</a><span class="sz">2 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.3/KimiPetUpdater.bat" aria-label="复制 KimiPetUpdater.bat 的直链">复制</button><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.3/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.3/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.3/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.3.3">查看</a></div></td>
+      </tr>
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.3.2</code></div></td>
+        <td data-label="发布日期"><div class="cell">2026-11-06</div></td>
+        <td data-label="64 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.2/KimiPet_x64.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.2/KimiPet_x64.exe">KimiPet_x64.exe</a><span class="sz">459 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.2/KimiPet_x64.exe" aria-label="复制 KimiPet_x64.exe 的直链">复制</button></div></td>
+        <td data-label="32 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.2/KimiPet_x86.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.2/KimiPet_x86.exe">KimiPet_x86.exe</a><span class="sz">431 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.2/KimiPet_x86.exe" aria-label="复制 KimiPet_x86.exe 的直链">复制</button></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.2/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.2/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.2/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.3.2">查看</a></div></td>
+      </tr>
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.3.1</code></div></td>
+        <td data-label="发布日期"><div class="cell">2026-11-06</div></td>
+        <td data-label="64 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.1/KimiPet_x64.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.1/KimiPet_x64.exe">KimiPet_x64.exe</a><span class="sz">451 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.1/KimiPet_x64.exe" aria-label="复制 KimiPet_x64.exe 的直链">复制</button></div></td>
+        <td data-label="32 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.1/KimiPet_x86.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.1/KimiPet_x86.exe">KimiPet_x86.exe</a><span class="sz">424 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.1/KimiPet_x86.exe" aria-label="复制 KimiPet_x86.exe 的直链">复制</button></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.1/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.1/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.1/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.1/KimiPet-v1.3.1.zip" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.1/KimiPet-v1.3.1.zip">KimiPet-v1.3.1.zip</a><span class="sz">451 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3.1/KimiPet-v1.3.1.zip" aria-label="复制 KimiPet-v1.3.1.zip 的直链">复制</button></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.3.1">查看</a></div></td>
+      </tr>
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.3</code></div></td>
+        <td data-label="发布日期"><div class="cell">2026-10-31</div></td>
+        <td data-label="64 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3/KimiPet_x64.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3/KimiPet_x64.exe">KimiPet_x64.exe</a><span class="sz">433 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3/KimiPet_x64.exe" aria-label="复制 KimiPet_x64.exe 的直链">复制</button></div></td>
+        <td data-label="32 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3/KimiPet_x86.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3/KimiPet_x86.exe">KimiPet_x86.exe</a><span class="sz">410 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3/KimiPet_x86.exe" aria-label="复制 KimiPet_x86.exe 的直链">复制</button></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3/KimiPet-v1.3.zip" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3/KimiPet-v1.3.zip">KimiPet-v1.3.zip</a><span class="sz">441 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.3/KimiPet-v1.3.zip" aria-label="复制 KimiPet-v1.3.zip 的直链">复制</button></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.3">查看</a></div></td>
+      </tr>
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.2</code></div></td>
+        <td data-label="发布日期"><div class="cell">2026-10-31</div></td>
+        <td data-label="64 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.2/KimiPet_x64.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.2/KimiPet_x64.exe">KimiPet_x64.exe</a><span class="sz">433 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.2/KimiPet_x64.exe" aria-label="复制 KimiPet_x64.exe 的直链">复制</button></div></td>
+        <td data-label="32 位"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.2/KimiPet_x86.exe" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.2/KimiPet_x86.exe">KimiPet_x86.exe</a><span class="sz">410 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.2/KimiPet_x86.exe" aria-label="复制 KimiPet_x86.exe 的直链">复制</button></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.2/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.2/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.2/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.2/KimiPet-v1.2.zip" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.2/KimiPet-v1.2.zip">KimiPet-v1.2.zip</a><span class="sz">441 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.2/KimiPet-v1.2.zip" aria-label="复制 KimiPet-v1.2.zip 的直链">复制</button></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.2">查看</a></div></td>
+      </tr>
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.1</code></div></td>
+        <td data-label="发布日期"><div class="cell">2026-10-09</div></td>
+        <td data-label="64 位"><div class="cell"><span class="none">—</span></div></td>
+        <td data-label="32 位"><div class="cell"><span class="none">—</span></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.1/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.1/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.1/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.1/KimiPet-v1.1.zip" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.1/KimiPet-v1.1.zip">KimiPet-v1.1.zip</a><span class="sz">303 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.1/KimiPet-v1.1.zip" aria-label="复制 KimiPet-v1.1.zip 的直链">复制</button><span class="note">早期版本只提供 zip</span></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.1">查看</a></div></td>
+      </tr>
+      <tr>
+        <td data-label="版本"><div class="cell"><code>v1.0</code></div></td>
+        <td data-label="发布日期"><div class="cell">2026-10-07</div></td>
+        <td data-label="64 位"><div class="cell"><span class="none">—</span></div></td>
+        <td data-label="32 位"><div class="cell"><span class="none">—</span></div></td>
+        <td data-label="其它附件"><div class="cell"><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.0/SHA256SUMS.txt" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.0/SHA256SUMS.txt">SHA256SUMS.txt</a><span class="sz">164 B</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.0/SHA256SUMS.txt" aria-label="复制 SHA256SUMS.txt 的直链">复制</button><span class="file"><a href="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.0/KimiPet-v1.0.zip" title="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.0/KimiPet-v1.0.zip">KimiPet-v1.0.zip</a><span class="sz">394 KB</span></span><button type="button" class="copy" data-copy="https://github.com/Minecraftgoose/kimi-pet/releases/download/v1.0/KimiPet-v1.0.zip" aria-label="复制 KimiPet-v1.0.zip 的直链">复制</button><span class="note">早期版本只提供 zip</span></div></td>
+        <td data-label="发行页"><div class="cell"><a class="go" href="https://github.com/Minecraftgoose/kimi-pet/releases/tag/v1.0">查看</a></div></td>
+      </tr>
+<!-- DOWNLOADS_ROWS_END -->
+    </tbody>
+  </table>
+  </div>
+
+  <section class="notes">
+    <h2>几点说明</h2>
+    <ul>
+      <li><strong>选哪个 exe</strong>：64 位 Windows 用 <code>KimiPet_x64.exe</code>，32 位系统用 <code>KimiPet_x86.exe</code>。不确定就选 64 位。</li>
+      <li><strong>直链</strong>：表格里的链接就是 <code>github.com/.../releases/download/...</code> 原地址；「复制」按钮复制完整 URL。国内网络打不开时可以用镜像前缀。</li>
+      <li><strong>校验</strong>：同版本的 <code>SHA256SUMS.txt</code> 可用来核对下载文件。</li>
+      <li><strong>老版本升级</strong>：v1.3.2 及更早的程序内下载链路已无法改动，下载 <code>KimiPetUpdater.bat</code> 放到 exe 同目录、退出程序后双击跑一次即可跨过去。</li>
+      <li><strong>早期版本</strong>：v1.0 / v1.1 只发布了 zip，表里如实标注，不会伪造 exe 链接。</li>
+      <li><strong>关于 exe 本身</strong>：单个 exe，首次运行会在旁边生成 <code>KimiPet.ini</code> 和 <code>mod\</code> 目录；右键「重新加载配置」即时生效。</li>
+    </ul>
+  </section>
+
+</main>
+
+<footer class="wrap">
+  <div class="foot-top">
+    <div><strong>kimi小圆球</strong> · MIT License · © 2026 Minecraftgoose</div>
+    <nav class="foot-links">
+      <a href="../">介绍页</a>
+      <a href="https://github.com/Minecraftgoose/kimi-pet/releases">Releases</a>
+      <a href="https://github.com/Minecraftgoose/kimi-pet">源码</a>
+    </nav>
+  </div>
+  <p style="margin:10px 0 0;font-size:12px;opacity:.85">
+    呼吸训练是节律引导，不诊断、不治疗、不监测任何指标，也不替代医疗建议。</p>
+</footer>
+
+<script>
+(function(){
+'use strict';
+function flash(btn,text){
+  var old=btn.textContent;btn.textContent=text;
+  setTimeout(function(){btn.textContent=old;},1400);
+}
+document.addEventListener('click',function(e){
+  var btn=e.target.closest?e.target.closest('button.copy'):null;
+  if(!btn)return;
+  var url=btn.getAttribute('data-copy')||'';
+  if(!url)return;
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(
+      function(){flash(btn,'已复制');},
+      function(){fallback();});
+  }else fallback();
+  function fallback(){
+    var t=document.createElement('textarea');
+    t.value=url;t.setAttribute('readonly','');
+    t.style.position='fixed';t.style.opacity='0';
+    document.body.appendChild(t);t.select();
+    var ok=false;try{ok=document.execCommand('copy');}catch(_){}
+    t.parentNode.removeChild(t);
+    flash(btn,ok?'已复制':'请长按链接复制');
+  }
+});
+})();
+</script>
+</body>
+</html>

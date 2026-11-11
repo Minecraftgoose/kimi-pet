@@ -2,7 +2,7 @@
 
 一个会自己东张西望的小Kimi，住在你的桌面上。
 
-> 想先看看它长什么样、能干什么？打开 [docs/index.html](docs/index.html)（单文件，离线也能看）。页面里那只球用的是**桌面版的 Canvas 网页原型**——球面投影的眼睛、果冻形变、眨眼、生气都在，下面还能点色点换衣服；功能卡的图标是内嵌的 Microsoft Fluent Emoji 3D，不依赖外部图片。
+> 想先看看它长什么样、能干什么？打开 [docs/index.html](docs/index.html)（单文件，离线也能看）。页面里那只球用的是**桌面版的 Canvas 网页原型**——球面投影的眼睛、果冻形变、眨眼、生气都在，下面还能点色点换衣服；功能卡的图标是内嵌的 Microsoft Fluent Emoji 3D，不依赖外部图片。另有一个 [历代下载页](docs/downloads/index.html)（`https://minecraftgoose.github.io/kimi-pet/downloads/`），把每个版本的附件直链列成表格。
 
 ---
 <div align="center"><img width="137" height="137" alt="图片" src="https://github.com/user-attachments/assets/bdbb817d-cf9e-4abf-8092-ee0d0b525b55" /></div>
@@ -16,8 +16,12 @@
 
 ```
 README.md  LICENSE  AGENTS.md  .gitignore
-.github/workflows/release.yml
-docs/index.html          # 介绍页（单文件 HTML）
+.github/
+  ├─ workflows/release.yml
+  └─ scripts/gen_downloads.py   # 生成 /downloads 表格（CI 每次 push 调）
+docs/
+  ├─ index.html                 # 介绍页（单文件 HTML）
+  └─ downloads/index.html       # 历代下载页（单文件 HTML，表格由 CI 注入）
 src/
   ├─ pet.h       公共声明：类型、常量、全局变量 extern、函数原型
   ├─ util.c      数学工具、UTF-8 ↔ 宽字符转换、文件读写、文本/颜色解析
@@ -49,6 +53,14 @@ cd src && sh build.sh        # 产物写到 ../../exe（仓库外）
 | `KimiPet_x86.exe` | 32 位系统用这个 |
 
 另有 `SHA256SUMS.txt` 可校验，以及 `KimiPetUpdater.bat`（手动更新器，见下方「检查更新」）。
+
+### 历代下载页
+
+`docs/downloads/index.html` → Pages 上的 **`/downloads/`**。一张表格列出从 v1.0 到当前每个版本的**附件直链**（`browser_download_url` 原值，点开即下，旁边有「复制」按钮），外加顶部「当前最新」卡片。早期只有 zip 的版本会如实标注，不会伪造 exe 链接。
+
+表格**不要手工改**：`.github/scripts/gen_downloads.py` 在 CI 每次 push（分支 push 和 tag push 都跑）时从 GitHub Releases API 重新拉一遍全部正式发行版，替换页面里 `<!-- DOWNLOADS_ROWS_BEGIN/END -->` 等标记区间，再用 contents API 写回默认分支的 `docs/downloads/index.html`。内容没变化就不产生空 commit；用 `GITHUB_TOKEN` 创建的 commit 不会触发新 workflow，消息里再带 `[skip ci]` 双保险。写回时**优先拿默认分支上现有的页面当模板**（只替换标记区间），所以 tag 打在旧 commit 上也不会把 main 上更新的样式覆盖掉。
+
+这不违反「分支 push 不打包」：这一步只同步一页静态文档，不生成 `dist/`、不传 Artifacts、不发 Release。tag push 时它排在「发布到 Release」之后，刚发出来的版本会立刻出现在表里。页面本身是单文件、零外部资源、断网双击也能看已同步过的内容。
 
 > 仓库里所有 `.bat`（含 `build.bat`）都是**纯 ASCII**、不带 `chcp`：部分 cmd 代码页会把 bat 按 ANSI 读，一个中文或全角标点就可能让整段脚本失效，所以提示一律英文。
 

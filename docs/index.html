@@ -7,6 +7,9 @@
 <meta name="description" content="一个会东张西望、会睡觉、会陪你呼吸的 Windows 桌面小圆球。配置驱动、模组可挂、单文件 exe。">
 <style>
   :root{
+    color-scheme:light;
+    --wrap:1080px;
+    --pad:clamp(16px,4vw,32px);
     --accent:#4a86d8;
     --ink:#1b2b45;
     --sub:#5a6b85;
@@ -16,7 +19,10 @@
     --glow:#dceaff;
   }
   *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
+  html{
+    scroll-behavior:smooth;scroll-padding-top:20px;
+    -webkit-text-size-adjust:100%;text-size-adjust:100%;
+  }
   body{
     margin:0;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
@@ -29,10 +35,14 @@
   }
   a{color:var(--accent);text-decoration:none}
   a:hover{text-decoration:underline}
-  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  .wrap{
+    width:100%;max-width:var(--wrap);margin:0 auto;
+    padding-left:max(var(--pad),env(safe-area-inset-left));
+    padding-right:max(var(--pad),env(safe-area-inset-right));
+  }
 
   /* ---------- hero ---------- */
-  .hero{text-align:center;padding:56px 0 44px}
+  .hero{text-align:center;padding:clamp(28px,6vw,56px) 0 clamp(24px,5vw,44px)}
   .badge{
     display:inline-block;font-size:13px;letter-spacing:.04em;
     padding:5px 14px;border:1px solid var(--line);border-radius:999px;
@@ -41,7 +51,11 @@
   /* 舞台只占这一小块；原型原本是全屏 canvas，这里收进容器里，
      页面其余部分照常滚动、点击链接都不受影响。 */
   .stage{
-    width:300px;height:300px;margin:18px auto 0;position:relative;
+    /* 宽高随视口收缩；aspect-ratio 保证 canvas 始终拿到正方形 rect。
+       矮屏横屏时用 max-height 再压一次，别把首屏顶到看不见内容。 */
+    width:clamp(190px,min(42vw,42vh),300px);
+    aspect-ratio:1/1;height:auto;max-height:min(42vh,300px);
+    margin:clamp(10px,2.5vw,18px) auto 0;position:relative;
     touch-action:none;user-select:none;-webkit-user-select:none;
     cursor:pointer;
   }
@@ -52,8 +66,10 @@
     display:flex;gap:9px;justify-content:center;flex-wrap:wrap;
     margin:12px 0 0;
   }
+  .swatches{gap:clamp(9px,2.5vw,14px)}
   .swatches button{
-    width:22px;height:22px;padding:0;border-radius:50%;cursor:pointer;
+    width:clamp(22px,5vw,28px);height:clamp(22px,5vw,28px);padding:0;
+    border-radius:50%;cursor:pointer;
     border:2px solid var(--card);
     box-shadow:0 0 0 1px var(--line);
     transition:transform .15s,box-shadow .15s;
@@ -63,11 +79,13 @@
     box-shadow:0 0 0 2px var(--accent);
     transform:scale(1.12);
   }
-  h1{font-size:42px;line-height:1.2;margin:20px 0 10px;letter-spacing:.02em}
-  .lead{font-size:17px;color:var(--sub);margin:0 auto 24px;max-width:560px}
+  h1{font-size:clamp(28px,6vw,42px);line-height:1.2;margin:clamp(14px,3vw,20px) 0 10px;letter-spacing:.02em}
+  .lead{font-size:clamp(15px,2.2vw,17px);color:var(--sub);margin:0 auto 24px;max-width:560px}
   .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
   .btn{
-    display:inline-block;padding:11px 24px;border-radius:12px;font-size:15px;font-weight:600;
+    display:inline-flex;align-items:center;justify-content:center;
+    min-height:44px;padding:11px clamp(16px,3vw,24px);border-radius:12px;
+    font-size:clamp(14px,2vw,15px);font-weight:600;
     border:1px solid var(--line);background:var(--card);color:var(--ink);
     transition:transform .15s,box-shadow .15s;
   }
@@ -76,13 +94,15 @@
   .tiny{font-size:12px;color:var(--sub);margin-top:16px;opacity:.85}
 
   /* ---------- sections ---------- */
-  section{padding:34px 0}
-  h2{font-size:25px;margin:0 0 6px;letter-spacing:.01em}
-  .sub{color:var(--sub);margin:0 0 24px;font-size:15px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+  section{padding:clamp(22px,4vw,34px) 0}
+  h2{font-size:clamp(20px,3.5vw,25px);margin:0 0 6px;letter-spacing:.01em}
+  .sub{color:var(--sub);margin:0 0 clamp(16px,3vw,24px);font-size:clamp(14px,2vw,15px)}
+  /* minmax(min(100%,250px),1fr)：极窄视口也不会因最小列宽溢出 */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:clamp(12px,2vw,16px)}
   .card{
     background:var(--card);border:1px solid var(--line);border-radius:16px;
-    padding:20px 22px;box-shadow:0 4px 18px rgba(43,78,133,.05);
+    padding:clamp(16px,3vw,20px) clamp(16px,3vw,22px);
+    box-shadow:0 4px 18px rgba(43,78,133,.05);min-width:0;
   }
   .card .ico{
     width:40px;height:40px;display:block;object-fit:contain;
@@ -96,17 +116,25 @@
     padding:1px 6px;border-radius:5px;font-size:.92em;
   }
 
-  table{width:100%;border-collapse:collapse;background:var(--card);
-        border:1px solid var(--line);border-radius:16px;overflow:hidden;font-size:15px}
-  th,td{text-align:left;padding:13px 18px;border-bottom:1px solid var(--line)}
+  /* 窄屏给表格一个可横滑的容器，列不会被挤成竖排文字 */
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;
+              border-radius:16px;max-width:100%}
+  table{width:100%;min-width:520px;border-collapse:collapse;background:var(--card);
+        border:1px solid var(--line);border-radius:16px;overflow:hidden;
+        font-size:clamp(13px,1.8vw,15px)}
+  th,td{text-align:left;padding:clamp(10px,2vw,13px) clamp(12px,2.4vw,18px);
+        border-bottom:1px solid var(--line);vertical-align:top}
   th{background:rgba(74,134,216,.06);font-size:13px;color:var(--sub);font-weight:600}
   tr:last-child td{border-bottom:0}
-  td:first-child{white-space:nowrap;font-weight:600}
+  td:first-child{font-weight:600}
+  td{word-break:break-word;overflow-wrap:anywhere}
 
-  .cfg{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+  .cfg{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));
+       gap:clamp(14px,3vw,20px);align-items:start}
   pre{
     margin:0;background:#12203a;color:#dce8fb;border-radius:16px;
-    padding:20px 22px;overflow-x:auto;font-size:13px;line-height:1.7;
+    padding:clamp(14px,3vw,20px) clamp(14px,3vw,22px);overflow-x:auto;
+    max-width:100%;font-size:clamp(12px,1.7vw,13px);line-height:1.7;
     font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
   }
   pre .k{color:#8fc0ff}
@@ -119,7 +147,7 @@
         border-radius:999px;background:var(--card);color:var(--sub);
         font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 
-  .dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+  .dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:12px}
   .dl a{display:block;background:var(--card);border:1px solid var(--line);
         border-radius:14px;padding:16px 18px;font-size:14px}
   .dl a:hover{text-decoration:none;border-color:var(--accent)}
@@ -127,14 +155,15 @@
   .dl span{color:var(--sub);font-size:13px}
 
   /* ---------- footer ---------- */
-  footer{border-top:1px solid var(--line);margin-top:30px;padding:24px 0 40px;
+  footer{border-top:1px solid var(--line);margin-top:30px;
+         padding:24px 0 max(40px,env(safe-area-inset-bottom));
          font-size:13px;color:var(--sub)}
   .foot-top{display:flex;align-items:baseline;justify-content:space-between;
             gap:16px;flex-wrap:wrap}
   .foot-left{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
   .foot-left strong{color:var(--ink);font-size:14px;letter-spacing:.02em}
-  .foot-links{display:flex;gap:18px;flex-wrap:wrap}
-  .foot-links a{font-size:13px}
+  .foot-links{display:flex;gap:clamp(12px,3vw,18px);flex-wrap:wrap}
+  .foot-links a{font-size:13px;display:inline-block;padding:4px 0;min-height:32px}
   .foot-note{margin:12px 0 0;max-width:780px;font-size:12px;
              line-height:1.65;opacity:.85}
 
@@ -165,21 +194,81 @@
   }
   .local-close:hover{color:var(--ink)}
 
-  @media (max-width:720px){
-    .hero{padding:38px 0 28px}
-    h1{font-size:32px}
-    .stage{width:240px;height:240px}
+  /* ---------- 各种屏幕 ---------- */
+  /* 大桌面：内容略微放宽，但仍居中，不拉成一行长线 */
+  @media (min-width:1600px){
+    :root{--wrap:1180px}
+    .grid{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  }
+  /* 平板 / 小笔电：卡片两列仍舒服，配置栏先落成一列 */
+  @media (max-width:900px){
     .cfg{grid-template-columns:1fr}
-    th,td{padding:11px 12px}
+    .grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr))}
+    .card .ico{margin-left:0}
+  }
+  /* 手机 */
+  @media (max-width:720px){
+    .hero{padding:clamp(22px,6vw,38px) 0 clamp(18px,5vw,28px)}
+    .stage{width:clamp(170px,min(62vw,38vh),240px);max-height:38vh}
+    .cta{gap:10px}
+    .cta .btn{flex:1 1 140px}
     .foot-top{flex-direction:column;align-items:flex-start;gap:8px}
     .foot-links{gap:14px}
+    .local{margin-top:16px}
   }
+  /* 窄手机：按钮整行、表格横滑提示、徽标不换行撑破 */
+  @media (max-width:480px){
+    .wrap{padding-left:max(14px,env(safe-area-inset-left));
+          padding-right:max(14px,env(safe-area-inset-right))}
+    .cta{flex-direction:column}
+    .cta .btn{width:100%;flex:none}
+    .badge{font-size:12px;padding:4px 10px}
+    .swatches button{width:30px;height:30px}
+    .dl a,.card{min-width:0}
+    .table-wrap{box-shadow:inset -12px 0 12px -12px rgba(43,78,133,.25)}
+    .local-inner{padding:12px}
+    .local-close{font-size:24px;padding:4px}
+  }
+  @media (max-width:360px){
+    h1{letter-spacing:0}
+    .card h3{font-size:15px}
+    .card p{font-size:13px}
+  }
+  /* 横屏矮屏（手机横放、分屏窗口）：先压缩首屏高度，球别把内容挤下去 */
+  @media (max-height:520px) and (orientation:landscape){
+    .hero{padding:16px 0 12px}
+    .stage{width:min(30vh,190px);max-height:30vh;margin-top:6px}
+    h1{margin:8px 0 4px}
+    .lead{margin-bottom:12px}
+    .hint{margin-top:0}
+  }
+  /* 超宽但不高的窗口 */
+  @media (min-aspect-ratio:2/1) and (max-height:700px){
+    .stage{width:min(34vh,240px);max-height:34vh}
+  }
+  /* 深色模式 */
   @media (prefers-color-scheme:dark){
-    :root{--ink:#e8f0fc;--sub:#9db0cc;--line:#2a3a54;--card:#18263e;
-          --bg:#101a2c;--glow:#1d3358}
+    :root{color-scheme:dark;--ink:#e8f0fc;--sub:#9db0cc;--line:#2a3a54;
+          --card:#18263e;--bg:#101a2c;--glow:#1d3358}
     pre{background:#0c1628}
     .card,.dl a,table,.badge,.btn{box-shadow:none}
     .swatches button{border-color:#18263e}
+    .table-wrap{box-shadow:inset -12px 0 12px -12px rgba(0,0,0,.35)}
+  }
+  /* 减少动态效果：关过渡；JS 侧也会把球降为静态 */
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{animation-duration:.01ms!important;
+      animation-iteration-count:1!important;transition-duration:.01ms!important}
+  }
+  /* 打印：去掉交互件与阴影，表格完整铺开 */
+  @media print{
+    :root{--bg:#fff;--card:#fff}
+    body{background:#fff}
+    .stage,.swatches,.cta,.local,.foot-links{display:none!important}
+    .table-wrap{overflow:visible}
+    table{min-width:0}
+    .card,table,.dl a{box-shadow:none;break-inside:avoid}
   }
 </style>
 </head>
@@ -215,6 +304,7 @@
   </p>
   <div class="cta">
     <a class="btn primary" href="https://github.com/Minecraftgoose/kimi-pet/releases">去下载 exe</a>
+    <a class="btn" href="downloads/">历代下载</a>
     <a class="btn" href="https://github.com/Minecraftgoose/kimi-pet">看看源码</a>
   </div>
   <p class="tiny">这一页是单个 HTML 文件，断网、双击、直接看，不加载任何外部资源。</p>
@@ -248,6 +338,7 @@
   <section>
     <h2>怎么逗它</h2>
     <p class="sub">就这几下，没有别的按钮了。</p>
+    <div class="table-wrap">
     <table>
       <tr><th>你做什么</th><th>它怎么回</th></tr>
       <tr><td>左键拖动</td><td>换个地方待着</td></tr>
@@ -257,6 +348,8 @@
       <tr><td>睡着时连点 3 下</td><td>醒来（1.2 秒内点满，停太久要重数）</td></tr>
       <tr><td>右键</td><td>颜色 / 模组 / 置顶 / 跟随鼠标 / 开机自启 / 呼吸训练 / 呼吸节奏 / 检查更新… / 重新加载配置 / 打开配置文件… / 关于 / 退出</td></tr>
     </table>
+    </div>
+    <p class="tiny">表格在窄屏上可以左右滑。</p>
   </section>
 
   <section>
@@ -325,6 +418,7 @@ breathe_hold_out = <span class="v">0</span>    <span class="c">; 呼末屏息：
       <a href="https://github.com/Minecraftgoose/kimi-pet/releases"><strong>KimiPet_x86.exe</strong><span>32 位系统用这个</span></a>
       <a href="https://github.com/Minecraftgoose/kimi-pet/releases"><strong>KimiPetUpdater.bat</strong><span>老系统手动升级用</span></a>
       <a href="https://github.com/Minecraftgoose/kimi-pet/releases"><strong>SHA256SUMS.txt</strong><span>校验下载文件</span></a>
+      <a href="downloads/"><strong>历代下载</strong><span>每个版本的附件直链，CI 自动同步</span></a>
     </div>
   </section>
 
@@ -337,6 +431,7 @@ breathe_hold_out = <span class="v">0</span>    <span class="c">; 呼末屏息：
       <span>MIT License · © 2026 Minecraftgoose</span>
     </div>
     <nav class="foot-links">
+      <a href="downloads/">历代下载</a>
       <a href="https://github.com/Minecraftgoose/kimi-pet/releases">Releases</a>
       <a href="https://github.com/Minecraftgoose/kimi-pet">源码</a>
       <a href="https://github.com/Minecraftgoose/kimi-pet/blob/main/docs/index.html">这一页</a>
@@ -374,7 +469,11 @@ function resize(){
      调成 0.56，球看着才跟页面其它内容分量相当。 */
   S=clamp(Math.round(Math.min(W,H)*0.56/24),3,26);
 }
-window.addEventListener('resize',resize);resize();
+window.addEventListener('resize',resize);
+window.addEventListener('orientationchange',resize);
+/* 容器尺寸可能因字体加载、滚动条、分屏变化而不触发 window.resize */
+if(typeof ResizeObserver!=='undefined') new ResizeObserver(resize).observe(stage);
+resize();
 
 const sx=x=>cx0+x*S, sy=y=>cy0+y*S;
 let ES=S;
