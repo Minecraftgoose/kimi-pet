@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>kimi小圆球 · 住在桌面上的小伙伴</title>
-<meta name="description" content="一个会东张西望、会睡觉、会陪你呼吸的 Windows 桌面小圆球。配置驱动、模组可挂、单文件 exe。">
+<meta name="description" content="一个会东张西望、会睡觉、会陪你呼吸的 Windows 桌面小圆球。配置驱动、模组可挂、单个 exe。">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
 <style>
   :root{
     color-scheme:light;
@@ -162,6 +163,8 @@
             gap:16px;flex-wrap:wrap}
   .foot-left{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
   .foot-left strong{color:var(--ink);font-size:14px;letter-spacing:.02em}
+  .brand-ico{width:20px;height:20px;vertical-align:-4px;margin-right:6px;
+             border-radius:5px;image-rendering:auto}
   .foot-links{display:flex;gap:clamp(12px,3vw,18px);flex-wrap:wrap}
   .foot-links a{font-size:13px;display:inline-block;padding:4px 0;min-height:32px}
   .foot-note{margin:12px 0 0;max-width:780px;font-size:12px;
@@ -307,7 +310,7 @@
     <a class="btn" href="downloads/">历代下载</a>
     <a class="btn" href="https://github.com/Minecraftgoose/kimi-pet">看看源码</a>
   </div>
-  <p class="tiny">这一页是单个 HTML 文件，断网、双击、直接看，不加载任何外部资源。</p>
+  <p class="tiny">样式和图标都随仓库一起发布，不依赖任何第三方 CDN。</p>
 </header>
 
 <main class="wrap">
@@ -427,8 +430,8 @@ breathe_hold_out = <span class="v">0</span>    <span class="c">; 呼末屏息：
 <footer class="wrap">
   <div class="foot-top">
     <div class="foot-left">
-      <strong>kimi小圆球</strong>
-      <span>MIT License · © 2026 Minecraftgoose</span>
+      <strong><img class="brand-ico" src="favicon.ico" alt="kimi小圆球图标">kimi小圆球</strong>
+      <span>MIT License · © 2026 Minecraftgo</span>
     </div>
     <nav class="foot-links">
       <a href="downloads/">历代下载</a>
