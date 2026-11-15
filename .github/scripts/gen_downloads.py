@@ -187,7 +187,7 @@ def build(releases, latest_tag):
             '      <div class="latest-links">%s</div>' % "".join(links),
             '    </div>',
         ]
-    meta = ("共 %d 个版本 · 最近同步 %s · 表格由 CI 在每次 push 时自动更新" %
+    meta = ("共 %d 个版本 · 最近同步 %s " %
             (len(rels), _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")))
     return "\n".join(hero), "\n".join(rows), meta
 
