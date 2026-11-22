@@ -97,7 +97,7 @@ KimiPet_源码与程序
 - **功能卡图标用内嵌的 Microsoft Fluent Emoji 3D PNG，不用字符 emoji**：从 `microsoft/fluentui-emoji` 的 `assets/<Name>/3D/<name>_3d.png` 取（jsDelivr 的 `cdn.jsdelivr.net/gh/...` 可下，`raw.githubusercontent.com` 在沙盒里不通），缩到 72×72 再 base64 内嵌进 `docs/index.html`，避免依赖第三方图片服务。目录名是 CLDR 短名（`Sleeping face` / `Counterclockwise arrows button`，不是 Sleeping Face），写错会 404。别用字符 emoji 顶替 —— 各平台字体渲染不一致。
 - **「关于 kimi 小圆球」直接打开介绍页，别弹信息框**：URL 形如 `https://minecraftgoose.github.io/kimi-pet/#<版本>&<配置文件路径>`。路径必须 UTF-8 percent-encoding，让 `decodeURIComponent` 能还原中文/空格/反斜杠，且 `&` `#` 要编码成 `%26` `%23`，否则网页解析会断在第一个 `&`。`about_url_build()` 放 `util.c`（纯字符串函数，RENDER_TEST 可断言），先算总长再写，缓冲不够就保持 `out[0]=0` 返回失败，别留半个 URL。网页端解析 hash 并在页面**最顶部**显示「来自本机的 kimi 小圆球」信息条（版本 + 配置路径 + 版本不一致提示），同时监听 `hashchange`；不带 hash 时完全隐藏。打开失败只显示 URL 与 Win32 错误码。
 - **页脚别堆成几行散 `<p>`**：`.foot-top` 用 flex 两栏（左品牌+版权，右导航链接），下面单独一行 `.foot-note` 放免责声明，移动端堆叠。
-- **版本号显示带 `v` 前缀**（`v1.4.6`），比较用数字宏不影响。
+- **版本号显示带 `v` 前缀**（`v1.4.7`），比较用数字宏不影响。
 - **发版必须打 tag，且只有 tag / `workflow_dispatch` 才「打包」**：`release.yml` 里 `should_package` 控制「整理产物 + 上传 Artifacts」，`should_release` 控制「发 Release」，两个 output 分开写，别图省事共用一个。分支 push → 只编译 + 检查产物（编译校验仍要做），`dist/` 不生成、不传 Artifacts、不发布；tag push / dispatch → 全做。幂等跳过（同名 Release 已存在且附件齐全）只把 `should_release` 置 false，**`should_package` 保持 true**，产物包照样生成方便对照。早期版本曾用 `should_release` 兼管打包，结果重跑同名 tag 时连 Artifact 都消失。
 - **Release 附件平铺、不打包 zip**；必须有独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`（「检查更新」按架构名找），外加 `KimiPetUpdater.bat` 供老版本用户手动升级。
 - **老 .NET 没有 `Tls12` 具名枚举**：PowerShell 2.0 / .NET 3.5 的 `SecurityProtocolType` 只有 `Ssl3`、`Tls`，写 `[Net.SecurityProtocolType]::Tls12` 会在赋值阶段抛 `PropertyAssignmentException`（报错「可能的枚举值为 Ssl3、Tls」），下载还没开始就死。用数值 `3072` 经 `[Enum]::ToObject([Net.SecurityProtocolType],3072)` 设置并包 try/catch；兜底顺序里优先 Win7+ 自带的 `certutil.exe`（走系统 HTTP 栈，不受 .NET 版本限制）。
@@ -111,3 +111,14 @@ KimiPet_源码与程序
 - **`wininet.h` 与 `winhttp.h` 不能放进同一个翻译单元**：mingw-w64 的 `winhttp.h` 注释里就写着 `Yes, these values contradict wininet.h`，两者对 `INTERNET_SCHEME` / `URL_COMPONENTS` / `HTTP_VERSION_INFO` 的 typedef 冲突。WinHTTP 实现必须独立成 `winhttpdl.c`，该文件只 include `<windows.h>` + `<winhttp.h>`，不 include `pet.h`。用宏改名屏蔽冲突不可靠（结构体布局也不同）。
 - **超时轮的收尾绝不能清 `g_updBusy`**：看门狗判定超时时已经清过 busy 让用户重试；旧工作线程可能晚一点才从阻塞读里醒来（实测 wine 下 `WinHttpCloseHandle` 唤不醒 `WinHttpQueryDataAvailable`，要等它自己的接收超时），此时 `upd_cleanup()` 若再清一次，会把**新一轮**检查更新的 busy 标志误清零，连点保护失效、两个 ctx 并存。判据是 `if(!READ(&c->timedOut)) InterlockedExchange(&g_updBusy,0)`。
 - **响应体达到上限必须明确失败**：`http_get_ex` 以前在 `cap>=UPD_MAX_BODY` 时只 `break`，之后仍 `return 1`，截断的 PE 会过 MZ 校验并覆盖自己，把安装写坏。超限一律 `ok=0`。也别把「旧版不查状态码」当成优势：403 错误页读进来只会被当 JSON 解析成「版本号看不懂」，并不会更容易成功。
+
+## 五、模组贴图（shape = image）
+
+- **贴图示例不做成内置模组**：内置模组固定就 `BUILTIN_MODS[]` 里那 3 个（兔耳 / 猫耳（白）/ 锚点调试），别往里加第 4 个示例 ini，也别把 PNG 字节编进 exe 或预置到交付包 `exe/mod/`。图片由用户自己放进 `mod\`，`mods_scan()` 扫到 ini 时由 `mods_load_textures()` 现读现解码。`mods_write_builtin()` 只写 ini 文本，不再写任何二进制附件。
+
+- **PNG 解码自己写，别引第三方库**：`tex.c` 里自带 inflate（stored / fixed / dynamic Huffman 三种块），支持 8 位非隔行 PNG 的 RGBA / RGB / 灰度 / LA / 调色板 + `tRNS`、5 种行滤波，输出统一 RGBA8。不要为了省事去链 zlib / libpng / GDI+ —— 目标是单个 exe、Win7 也能跑，多一个 DLL 依赖就多一类现场问题。
+- **IDAT 是 zlib 流不是裸 deflate**：拼起来的 IDAT 前面有 2 字节 CMF/FLG、末尾 4 字节 adler32，`inflate_raw` 之前要剥掉并校验 FCHECK；只吃裸 deflate 会让所有 PNG 都解码失败。
+- **`src` 必须是 `mod\` 里的纯文件名**：解析时用 `safe_src()` 挡掉路径分隔符、盘符、控制字符和 `..` 开头，别让一个 ini 把 exe 旁边的任意文件读进来。中文文件名要保留（ini 是 UTF-8）。
+- **贴图缓存跟模组池同生命周期**：`g_tex[]` 由 `mods_clear()` 统一释放，`mods_scan()` 末尾 `mods_load_textures()` 按文件名去重复用；解析阶段只存文件名、不加载，保持 `mod_parse_text()` 可在无 Windows API 的纯逻辑测试里跑。
+- **绘制走 `buf_blend`，本体空间单位与 SDF 图元一致**：`w`/`h` 和 `circle` 的 `r` 同一套单位，跟着 `ES` 缩放、跟着锚点 `rot` 旋转；`h<=0` 时按图片宽高比推算。双线性采样时四邻的 alpha 要一起插值，边缘 clamp。
+- **改了源文件清单要同步两个构建脚本**：`build.sh` 的 `SRCS` 和 `build.bat` 的两行 `gcc` 都要加 `tex.c`，漏一个 Windows 下就会链接失败。`build.bat` 保持纯 ASCII + CRLF。

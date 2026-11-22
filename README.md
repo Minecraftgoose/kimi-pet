@@ -22,6 +22,7 @@ src/
   ├─ util.c      数学工具、UTF-8 ↔ 宽字符转换、文件读写、文本/颜色解析
   ├─ config.c    KimiPet.ini：解析、写回、缺键自动升级、路径定位
   ├─ mod.c       锚点、图元（SDF 绘制）、mod\ 目录里的模组
+  ├─ tex.c       PNG 解码（自带 inflate）与锚点贴图绘制
   ├─ render.c    球体状态、位图缓冲、运动与绘制
   ├─ update.c    检查更新：查 GitHub Release、下载、写覆盖脚本
   ├─ winhttpdl.c WinHTTP 下载
@@ -245,6 +246,7 @@ color = #262626
 | `line` | `thick` + 终点 | 圆头线段（鼻梁、胡须、腿） |
 | `arc` | `r` `thick` `a0` `a1` | 圆弧，角度用度，0 = 正右方，顺时针（因为 y 向下） |
 | `triangle` / `tri` | `w` `h` `lean` `corner` | 等腰三角形，尖朝上。`w` 底宽、`h` 高、`lean` 让尖端左右偏、`corner` 圆角（做猫耳用） |
+| `image` / `png` / `pic` / `texture` / `sticker` | `src` `w` `h` | 在锚点贴一张 PNG。`src` 是 `mod\` 目录里的文件名，`w` 是显示宽度；不写 `h` 就按图片比例自动算高度 |
 
 ### 每个图元都能调
 
@@ -258,8 +260,34 @@ color = #262626
 | `color` | `#RRGGBB` 或 `r,g,b` |
 | `alpha` | 0~1 透明度 |
 | `layer` | `back` = 画在球体之前（耳朵、脚这类该被挡住的）；默认 `front` = 盖在眼睛之后 |
+| `src` / `file` / `image` / `png` | 仅 `shape = image` 用：PNG 文件名，只能是 `mod\` 里的纯文件名 |
+| `w` / `h` | `image` 里是显示宽 / 高，单位与 `circle` 的 `r` 一致；`h` 省略时按图片宽高比推算 |
 
 `w` 在 `rect` / `triangle` 里是宽度，在其他图元里当线宽用；想明确点就写 `thick`。`triangle` 的 `lean` 是顶点相对底边中点的水平偏移，`corner` 把尖角磨圆，配合 `rot` 能做出向外撇的耳朵。
+
+### 贴图
+
+`shape = image` 可以直接把一张 PNG 贴到锚点上，和其它图元一样跟着球缩放、鼓起、歪头，也能用 `dx` `dy` `rot` `scale` `alpha` `layer` 调位置。图片放在 `mod\` 里，和 ini 同级：
+
+把 PNG 和 ini 一起放进 `mod\` 就行，不需要改程序、也没有内置的贴图示例：
+
+```ini
+[mod]
+name = 我的贴图
+enabled = 1
+
+[part]
+at = head
+shape = image
+src = star.png
+w = 7        ; 显示宽度，单位与 circle 的 r 一致
+dy = -1      ; 再往上挪一点
+```
+
+- 支持 8 位 RGBA / RGB / 灰度 / 灰度+Alpha / 调色板（含 `tRNS` 透明）PNG，非隔行；透明像素按 alpha 混合，缩放用双线性采样。
+- `src` 只认纯文件名，写路径分隔符、盘符或 `..` 会被忽略，图片也不会被读进来。文件缺失或解码失败时这个图元不显示，其它模组照常工作。
+- 同一张图片被多个图元引用时只解码一次；重新加载配置会一起释放重读。
+- 解码是纯 C 自带的 inflate，不依赖 zlib、GDI+ 或任何第三方 DLL，单个 exe 照旧能跑。
 
 ## 自己编译
 

@@ -118,7 +118,8 @@ static double sdf_triangle(double x,double y,const double*p){
 }
 static double sdf_rect(double x,double y,const double*p){
   double hw=p[0]*0.5-p[2], hh=p[1]*0.5-p[2];
-  if(hw<0) hw=0; if(hh<0) hh=0;
+  if(hw<0) hw=0;
+  if(hh<0) hh=0;
   double dx=fabs(x)-hw, dy=fabs(y)-hh;
   double out=hypot(dx>0?dx:0, dy>0?dy:0);
   double inn=fmin(dx>dy?dx:dy, 0.0);
@@ -153,8 +154,10 @@ static void draw_shape(double ox,double oy,double rot,double scl,double bound,
   double wx=cx0+ox*ES, wy=cy0+oy*ES, rp=R*ES+2.0;
   int x0=(int)floor(wx-rp), x1=(int)ceil(wx+rp);
   int y0=(int)floor(wy-rp), y1=(int)ceil(wy+rp);
-  if(x0<0) x0=0; if(y0<0) y0=0;
-  if(x1>g_win) x1=g_win; if(y1>g_win) y1=g_win;
+  if(x0<0) x0=0;
+  if(y0<0) y0=0;
+  if(x1>g_win) x1=g_win;
+  if(y1>g_win) y1=g_win;
   if(x0>=x1||y0>=y1) return;
   double inv=1.0/(ES*scl);
   for(int y=y0;y<y1;y++){
@@ -187,6 +190,7 @@ static void part_reset(ModPart *P){
   P->layer=1; P->kind=SH_CIRCLE;
   P->rad=1.0; P->thick=0.5; P->sw=1.0; P->sh=1.0;
   P->rx=1.0;  P->ry=1.0;  P->corner=0.0;
+  P->tex=-1;  P->src[0]=0;
   P->col.r=P->col.g=P->col.b=0;
 }
 
@@ -202,6 +206,7 @@ static void part_build(ModPart *P){
   /* triangle：等腰，顶点 (lean,-h/2)，底边 y=+h/2 宽 w */
   case SH_TRIANGLE:P->p[0]=P->sw*0.5; P->p[1]=P->sh*0.5;
                    P->p[2]=P->lean; P->p[3]=fmax(P->corner,0.0); break;
+  case SH_IMAGE:   P->p[0]=P->sw; P->p[1]=P->sh; break;
   default:         P->p[4]=P->thick; break;      /* SH_LINE */
   }
 }
@@ -211,6 +216,11 @@ Mod      g_mods[MAX_MODS];
 int      g_nMods=0;
 ModPart  g_parts[MAX_PARTS];
 int      g_nParts=0;
+
+/* 解码后的贴图缓存：同一个文件被多个 part 引用时只解码一次。
+   生命周期跟模组池一致，mods_clear() 时统一释放。 */
+TexEntry g_tex[MAX_TEX];
+int      g_nTex=0;
 
 /* 主配置 [mods] 段里的开关（按名字覆盖 mod 文件自带的 enabled） */
 ModSw g_modSw[MAX_MODS];
@@ -238,7 +248,24 @@ static int find_shape(const char *s){
   if(cieq(s,"line")||cieq(s,"capsule"))    return SH_LINE;
   if(cieq(s,"arc"))                        return SH_ARC;
   if(cieq(s,"triangle")||cieq(s,"tri"))    return SH_TRIANGLE;
+  if(cieq(s,"image")||cieq(s,"png")||cieq(s,"pic")||
+     cieq(s,"texture")||cieq(s,"sticker"))return SH_IMAGE;
   return -1;
+}
+
+/* src 只允许 mod 目录里的纯文件名：不许路径分隔符、盘符、控制字符、
+   ".." 开头，免得一个 ini 把 exe 旁边的任意文件读进来。 */
+static int safe_src(const char *v,char *out,int n){
+  if(!v||!*v) return 0;
+  size_t L=strlen(v);
+  if(L+1>(size_t)n) return 0;
+  for(size_t i=0;i<L;i++){
+    unsigned char c=(unsigned char)v[i];
+    if(c=='\\'||c=='/'||c==':'||c<32) return 0;
+  }
+  if(v[0]=='.'&&v[1]=='.') return 0;
+  memcpy(out,v,L+1);
+  return 1;
 }
 
 /* 解析一个 mod 文件的文本；parts 追加到全局池，返回新建的 mod 索引（失败 -1） */
@@ -300,7 +327,11 @@ int mod_parse_text(const char *text,const wchar_t *fallbackName){
     if(!cieq(sec,"part") || !inPart) continue;
 
     if(cieq(key,"shape")){
-      int k=find_shape(val); if(k>=0) P.kind=k;
+      int k=find_shape(val);
+      if(k>=0){
+        P.kind=k;
+        if(k==SH_IMAGE){ P.sw=8.0; P.sh=0.0; }  /* 贴图自己的默认值 */
+      }
     }else if(cieq(key,"at")||cieq(key,"anchor")){
       int a=find_anchor(val); if(a>=0) P.a0=a;
     }else if(cieq(key,"to")){
@@ -344,6 +375,10 @@ int mod_parse_text(const char *text,const wchar_t *fallbackName){
     else if(cieq(key,"a1")||cieq(key,"to_angle")||cieq(key,"angle")) P.a1deg=atof(val);
     else if(cieq(key,"corner")||cieq(key,"round"))P.corner=atof(val);
     else if(cieq(key,"lean")||cieq(key,"tipx")) P.lean=atof(val);
+    else if(cieq(key,"src")||cieq(key,"file")||cieq(key,"image")||cieq(key,"png")){
+      char safe[TEX_SRC_LEN];
+      if(safe_src(val,safe,sizeof safe)) memcpy(P.src,safe,sizeof safe);
+    }
   }
   if(hasPart && g_nParts<MAX_PARTS){
     part_build(&P);
@@ -357,7 +392,11 @@ int mod_parse_text(const char *text,const wchar_t *fallbackName){
   return mi;
 }
 
-void mods_clear(void){ g_nMods=0; g_nParts=0; }
+void mods_clear(void){
+  for(int i=0;i<g_nTex;i++) tex_free(&g_tex[i].img);
+  g_nTex=0;
+  g_nMods=0; g_nParts=0;
+}
 
 /* ---------------- 出厂自带的几个示例模组 ----------------
    首次运行会写进 exe 同级的 mod\ 目录，全都默认关闭，
@@ -563,6 +602,8 @@ static double part_bound(ModPart *P,double *pp){
   case SH_LINE:    return hypot(pp[2],pp[3])+P->p[4]*0.5+1.0;
   case SH_TRIANGLE:return fmax(hypot(P->p[2],P->p[1]),hypot(P->p[0],P->p[1]))
                           +P->p[3]+1.0;
+  case SH_IMAGE:   return hypot(P->sw>1e-6?P->sw:8.0,
+                                P->sh>1e-6?P->sh:8.0)*0.5+1.0;
   }
   return 4.0;
 }
@@ -595,6 +636,16 @@ void draw_mods(int layer){
       pp[2]=( ddx*cs + ddy*sn)/scl;
       pp[3]=(-ddx*sn + ddy*cs)/scl;
       pp[4]=P->p[4];
+    }
+
+    if(P->kind==SH_IMAGE){
+      if(P->tex>=0 && P->tex<g_nTex){
+        TexImg *im=&g_tex[P->tex].img;
+        double w=P->sw>1e-6?P->sw:8.0;
+        double hh=P->sh>1e-6?P->sh:(im->w>0?w*im->h/(double)im->w:8.0);
+        tex_draw(im,ox,oy,rot,scl,w,hh,P->alpha);
+      }
+      continue;
     }
 
     double bound=part_bound(P,pp);
@@ -658,6 +709,38 @@ void mods_write_builtin(void){
   }
 }
 
+/* 扫完 ini 后统一加载贴图：按文件名缓存，同一个文件只解码一次。
+   路径安全已在解析时过滤，这里直接拼 mod 目录。加载失败的 part
+   保持 tex=-1，绘制时跳过，不影响其它模组。 */
+static int tex_cache_get(const wchar_t *fn){
+  for(int i=0;i<g_nTex;i++) if(wcscmp(g_tex[i].file,fn)==0) return i;
+  if(g_nTex>=MAX_TEX) return -1;
+  wchar_t path[1024];
+  _snwprintf(path,1024,L"%ls\\%ls",g_modDir,fn);
+  size_t len=0;
+  unsigned char *raw=read_file_all(path,&len);
+  if(!raw) return -1;
+  TexImg im;
+  int ok=tex_decode(raw,len,&im);
+  free(raw);
+  if(!ok) return -1;
+  wcsncpy(g_tex[g_nTex].file,fn,TEX_SRC_LEN-1);
+  g_tex[g_nTex].file[TEX_SRC_LEN-1]=0;
+  g_tex[g_nTex].img=im;
+  return g_nTex++;
+}
+
+static void mods_load_textures(void){
+  for(int i=0;i<g_nParts;i++){
+    ModPart *P=&g_parts[i];
+    P->tex=-1;
+    if(P->kind!=SH_IMAGE||!P->src[0]) continue;
+    wchar_t fn[TEX_SRC_LEN];
+    if(u8_to_w(P->src,fn,TEX_SRC_LEN)<=0) continue;
+    P->tex=tex_cache_get(fn);
+  }
+}
+
 void mods_scan(void){
   mods_clear();
   wchar_t pat[1024];
@@ -697,5 +780,6 @@ void mods_scan(void){
     mod_parse_text((const char*)raw+skip,fb);
     free(raw);
   }
+  mods_load_textures();
 }
 #endif

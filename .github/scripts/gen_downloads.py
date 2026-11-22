@@ -8,7 +8,7 @@
 
     python3 gen_downloads.py --template docs/downloads/index.html \
         --out /tmp/downloads.html --repo OWNER/REPO \
-        [--latest-tag v1.4.6] [--releases-json FILE] [--publish] [--branch main]
+        [--latest-tag v1.4.7] [--releases-json FILE] [--publish] [--branch main]
 
 --releases-json 供本地测试：喂一个 releases API 的数组 JSON，不联网。
 --publish 时优先拿默认分支上现有的页面当模板，只替换标记区间，

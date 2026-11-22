@@ -1,7 +1,7 @@
 /* ==========================================================================
    KimiPet —— 公共声明
    所有模块共用的类型、常量、全局变量与函数原型都在这里。
-   实现分散在 util.c / config.c / mod.c / render.c / update.c / main.c。
+   实现分散在 util.c / config.c / mod.c / tex.c / render.c / update.c / main.c。
    ========================================================================== */
 #ifndef KIMIPET_H
 #define KIMIPET_H
@@ -48,9 +48,9 @@ extern double g_simNow;
 /* ---------------- 版本 / 仓库（自动更新用） ---------------- */
 #define KP_VERSION_MAJOR 1
 #define KP_VERSION_MINOR 4
-#define KP_VERSION_PATCH 6
-#define KP_VERSION_STR   "v1.4.6"
-#define KP_VERSION_W    L"v1.4.6"
+#define KP_VERSION_PATCH 7
+#define KP_VERSION_STR   "v1.4.7"
+#define KP_VERSION_W    L"v1.4.7"
 #define KP_REPO_OWNER    "Minecraftgoose"
 #define KP_REPO_NAME     "kimi-pet"
 #define KP_REPO_OWNER_W  L"Minecraftgoose"
@@ -61,6 +61,8 @@ extern double g_simNow;
 #define NAME_LEN     48
 #define MAX_MODS     32
 #define MAX_PARTS    256
+#define MAX_TEX      64       /* 贴图缓存条目上限 */
+#define TEX_SRC_LEN  128
 
 /* ---------------- 基础类型 ---------------- */
 typedef struct { unsigned char r,g,b; } RGB8;
@@ -97,7 +99,12 @@ enum { A_BODY=0, A_EYE_L, A_EYE_R, A_EYES, A_MOUTH, A_HEAD_TOP,
        A_EAR_L, A_EAR_R, A_FOOT_L, A_FOOT_R, ANCH_N };
 
 /* ---------------- 图元 ---------------- */
-enum { SH_CIRCLE=0, SH_RING, SH_ELLIPSE, SH_RECT, SH_LINE, SH_ARC, SH_TRIANGLE };
+enum { SH_CIRCLE=0, SH_RING, SH_ELLIPSE, SH_RECT, SH_LINE, SH_ARC, SH_TRIANGLE,
+       SH_IMAGE };
+
+/* 解码后的贴图：RGBA8，行主序，从上到下 */
+typedef struct { unsigned char *px; int w, h; } TexImg;
+typedef struct { wchar_t file[TEX_SRC_LEN]; TexImg img; } TexEntry;
 
 typedef struct {
   int    mod;
@@ -113,6 +120,11 @@ typedef struct {
   double dx, dy;     /* 起点偏移 */
   double tx, ty;     /* 终点偏移（a1<0 时是相对起点的偏移） */
   double rot, scl;
+  /* SH_IMAGE：src 是 mod 目录里的图片文件名（UTF-8，只允许纯文件名），
+     tex 是解码后的缓存下标（-1 = 没加载到）。sw/sh 复用为显示宽/高，
+     sh<=0 时按图片自身宽高比自动算高度。 */
+  char   src[TEX_SRC_LEN];
+  int    tex;
 } ModPart;
 
 typedef struct { const char *file; const char *text; } BuiltinMod;
@@ -210,6 +222,8 @@ extern ModPart g_parts[MAX_PARTS];
 extern int     g_nParts;
 extern ModSw   g_modSw[MAX_MODS];
 extern int     g_nModSw;
+extern TexEntry g_tex[MAX_TEX];
+extern int      g_nTex;
 
 /* config.c —— 配置 */
 extern CFG        g_cfg;
@@ -270,6 +284,12 @@ void   add_color(const wchar_t *name, const CFG_COLOR *c);
 int    parse_color_value(char *v, CFG_COLOR *c);
 void   save_color(void);
 void   save_flag(const wchar_t *key,int on);
+
+/* ---- tex.c：PNG 解码 / 锚点贴图 ---- */
+int  tex_decode(const unsigned char *data, size_t len, TexImg *out);
+void tex_free(TexImg *im);
+void tex_draw(const TexImg *im,double ox,double oy,double rot,double scl,
+              double w,double h,double alpha);
 
 /* ---- mod.c：锚点 / 图元 / 模组 ---- */
 int    find_anchor(const char *n);

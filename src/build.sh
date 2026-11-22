@@ -32,7 +32,7 @@ echo "  -> 编译图标资源"
 $WR_X64 $WR_CP icon.rc -O coff -o icon_x64.res
 $WR_X86 $WR_CP icon.rc -O coff -o icon_x86.res
 
-SRCS="util.c config.c mod.c render.c update.c winhttpdl.c main.c"
+SRCS="util.c config.c mod.c tex.c render.c update.c winhttpdl.c main.c"
 
 echo "  -> KimiPet_x64.exe（64 位）"
 x86_64-w64-mingw32-gcc $CFLAGS -o "$OUT/KimiPet_x64.exe" $SRCS icon_x64.res $LIBS
