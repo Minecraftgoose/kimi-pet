@@ -47,10 +47,10 @@ extern double g_simNow;
 
 /* ---------------- 版本 / 仓库（自动更新用） ---------------- */
 #define KP_VERSION_MAJOR 1
-#define KP_VERSION_MINOR 4
-#define KP_VERSION_PATCH 8
-#define KP_VERSION_STR   "v1.4.8"
-#define KP_VERSION_W    L"v1.4.8"
+#define KP_VERSION_MINOR 5
+#define KP_VERSION_PATCH 0
+#define KP_VERSION_STR   "v1.5"
+#define KP_VERSION_W    L"v1.5"
 #define KP_REPO_OWNER    "Minecraftgoose"
 #define KP_REPO_NAME     "kimi-pet"
 #define KP_REPO_OWNER_W  L"Minecraftgoose"
@@ -337,7 +337,13 @@ void   do_update(HWND h);
 /* ---- winhttpdl.c：WinHTTP 兜底（独立翻译单元，避开 wininet.h 类型冲突） ---- */
 int    winhttp_download(const char *url,const wchar_t *dst,DWORD *status,
                         volatile LONG *abort,volatile PVOID *reqSlot,
-                        DWORD connectMs,DWORD recvMs,DWORD maxBody);
+                        DWORD connectMs,DWORD recvMs,DWORD maxBody,
+                        DWORD *doneBytes);
+/* API 阶段的纯 C 兜底：失败（含 4xx）也把原始响应交给调用方 free */
+int    winhttp_get(const char *url,const wchar_t *headers,
+                   char **out,int *plen,DWORD *status,
+                   volatile LONG *abort,volatile PVOID *reqSlot,
+                   DWORD connectMs,DWORD recvMs,DWORD maxBody);
 void   winhttp_abort(volatile PVOID *reqSlot);
 #endif
 

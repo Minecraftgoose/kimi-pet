@@ -96,7 +96,7 @@ KimiPet_源码与程序
 - **功能卡图标用内嵌的 Microsoft Fluent Emoji 3D PNG，不用字符 emoji**：从 `microsoft/fluentui-emoji` 的 `assets/<Name>/3D/<name>_3d.png` 取（jsDelivr 的 `cdn.jsdelivr.net/gh/...` 可下，`raw.githubusercontent.com` 在沙盒里不通），缩到 72×72 再 base64 内嵌进 `docs/index.html`，避免依赖第三方图片服务。目录名是 CLDR 短名（`Sleeping face` / `Counterclockwise arrows button`，不是 Sleeping Face），写错会 404。别用字符 emoji 顶替 —— 各平台字体渲染不一致。
 - **「关于 Kimi-Pet」打开介绍页带 hash，网页端用弹窗展示，别改成软件 MessageBox**：`about_url_build()` 在 `util.c`（纯字符串函数，RENDER_TEST 可断言），URL 形如 `https://minecraftgoose.github.io/kimi-pet/#<版本>&<配置文件路径>`，路径 UTF-8 percent-encoding，网页端 `decodeURIComponent` 还原中文/空格/反斜杠，`&` `#` 要编成 `%26` `%23`。`main.c` 的 `ID_ABOUT` 用 `ShellExecuteW` 打开，失败才给 URL 与 Win32 错误码。**网页侧展示用 `<dialog>` 弹窗（`#aboutDlg` + `showModal()`），不要用顶部 `<aside>` 信息条**：带 hash 打开时自动弹，显示版本、实际配置路径、版本不一致提示；不带 hash 时完全不弹，页脚另留「关于」入口手动打开（显示页面版本与简介）。弹窗要能 Esc / 点遮罩 / 按钮关闭，监听 `hashchange`，打印时隐藏，窄屏不溢出。
 - **页脚别堆成几行散 `<p>`**：`.foot-top` 用 flex 两栏（左品牌+版权，右导航链接），下面单独一行 `.foot-note` 放免责声明，移动端堆叠。
-- **版本号显示带 `v` 前缀**（`v1.4.8`），比较用数字宏不影响。
+- **版本号显示带 `v` 前缀**（`v1.5`），比较用数字宏不影响。
 - **发版必须打 tag，且只有 tag / `workflow_dispatch` 才「打包」**：`release.yml` 里 `should_package` 控制「整理产物 + 上传 Artifacts」，`should_release` 控制「发 Release」，两个 output 分开写，别图省事共用一个。分支 push → 只编译 + 检查产物（编译校验仍要做），`dist/` 不生成、不传 Artifacts、不发布；tag push / dispatch → 全做。幂等跳过（同名 Release 已存在且附件齐全）只把 `should_release` 置 false，**`should_package` 保持 true**，产物包照样生成方便对照。早期版本曾用 `should_release` 兼管打包，结果重跑同名 tag 时连 Artifact 都消失。
 - **Release 附件平铺、不打包 zip**；只放独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`（「检查更新」按架构名找）和 `SHA256SUMS.txt`，不放任何 `.bat`。
 - **老 .NET 没有 `Tls12` 具名枚举**：PowerShell 2.0 / .NET 3.5 的 `SecurityProtocolType` 只有 `Ssl3`、`Tls`，写 `[Net.SecurityProtocolType]::Tls12` 会在赋值阶段抛 `PropertyAssignmentException`（报错「可能的枚举值为 Ssl3、Tls」），下载还没开始就死。用数值 `3072` 经 `[Enum]::ToObject([Net.SecurityProtocolType],3072)` 设置并包 try/catch；兜底顺序里优先 Win7+ 自带的 `certutil.exe`（走系统 HTTP 栈，不受 .NET 版本限制）。
@@ -134,3 +134,7 @@ KimiPet_源码与程序
 - **更新完成用纯 C 自替换，不生成脚本**：`UPD_DO_REPLACE` 在主线程用 `MoveFileExW` 把运行中的 exe 改名成 `.bak`（Windows 允许同卷重命名正在运行的 exe），`CopyFileW` 把下载的新 exe 复制到原名，`ShellExecuteW` 启动后 `PostQuitMessage`；任一步失败就回滚、贴 Win32 错误码，旧 exe 必须保持可运行。新进程启动时删掉 `.bak`。别再退回写覆盖 bat 那套（OEM 编码、chcp、中文路径乱码）。
 
 - **「把某块信息做成弹窗」指的是换展示形式，不是删掉信息**：用户说「网页里做个弹窗显示关于」，是让网页顶部那条信息条变成 `<dialog>` 弹窗，软件仍要打开网页带 hash、网页仍要解析 hash。曾经理解成「软件改成 MessageBox + 删掉网页信息条和 hash 解析」，属于把整个功能拆没了，别再犯。
+
+- **API 阶段失败也要先试 WinHTTP，再报错**：Win7 上 Schannel 常未启用 TLS 1.2，WinINet 连 `api.github.com` 都握不上手，只给下载做兜底会连「有没有新版」都查不到。`upd_thread` 里 `http_get_ex()` 失败且未超时时，先用 `winhttp_get()` 纯 C 重取一次；两份原始响应挑信息量大的那份贴出来，别丢掉 403 的 JSON。`winhttp_get()` 失败（含 4xx）也要把已读到的 body 交回调用方 free。
+- **下载必须流式写盘，别把整个 exe 读进内存**：`wininet_download()` 用 64KB 块 `InternetReadFile` → `WriteFile`，内存恒定；超 `UPD_MAX_BODY` 明确失败，绝不把截断 PE 当成功。4xx 错误页也落盘（限 64KB），由 `grab_dst()` 读回贴给用户。每条兜底链路都报 `doneBytes`，`download_exe()` 取最大值，下载失败的弹框追加 `[已下载] N 字节` —— 这是判断卡在哪一步的事实字段，不写猜测话术。
+- **`winhttp_get()` 的返回值初值必须是 0**：`goto done` 会跳过读循环，若把 `ok` 初始化成 1，连接失败 / SendRequest 失败 / malloc 失败都会误报成功并让上层去解析空 JSON。只有完整成功路径才置 1；读循环自身的成败用独立变量。

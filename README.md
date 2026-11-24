@@ -25,7 +25,7 @@ src/
   ├─ tex.c       PNG 解码（自带 inflate）与锚点贴图绘制
   ├─ builtin_png.h 内置「星星眼」用的 PNG 字节（用户提供的星星，黑底已抠透明）
   ├─ render.c    球体状态、位图缓冲、运动与绘制
-  ├─ update.c    检查更新：查 GitHub Release、下载、纯 C 自替换并重启
+  ├─ update.c    检查更新：查 GitHub Release、流式下载、纯 C 自替换并重启
   ├─ winhttpdl.c WinHTTP 下载
   ├─ main.c      窗口、右键菜单、鼠标钩子、开机自启、入口
   ├─ icon.rc  KimiPet.ico

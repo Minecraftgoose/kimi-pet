@@ -9,8 +9,9 @@
    又在「修卡顿」时把下载包进 20 秒看门狗，结果检测得到更新、exe 永远下不下来。
    现在：看门狗按阶段分阈值，下载走宽松超时。
 
-   下载兜底链：WinINet（主）→ WinHTTP（纯 C 系统组件，显式请求 TLS 1.2）
+   下载兜底链：WinINet 流式写盘（主）→ WinHTTP（纯 C，显式 TLS 1.2）
               → curl.exe / certutil.exe / PowerShell（外部工具）。
+   API 阶段在 WinINet 失败时也先试一次 WinHTTP：否则 Win7 上连版本号都查不到。
    WinHTTP 这一层专为 Win7 而加：系统 Schannel 常未启用 TLS 1.2，而外部
    curl.exe 在 Win7 上不存在、certutil/PowerShell 又容易被安全软件拦。
    WinHTTP 不依赖任何外部 exe，也不需要 libcurl。                       */
@@ -131,8 +132,12 @@ int find_asset_url(const char *json,const char *want,char *out,int outn){
 #define UPD_DL_HARD_MS   330000      /* 看门狗：下载阶段硬超时（略大于 300s，留余量） */
 #endif
 #ifndef UPD_MAX_BODY
-#define UPD_MAX_BODY     (16*1024*1024)
+#define UPD_MAX_BODY     (16*1024*1024)   /* 下载 exe 的响应体上限 */
 #endif
+/* API 只是几 KB 的 JSON，单独给 1MB；两条链路别共用一个上限 */
+#define UPD_API_MAX_BODY (1024*1024)
+#define UPD_ERR_MAX      (64*1024)        /* 4xx 错误页最多读这么多 */
+#define UPD_DL_BUF       (64*1024)        /* 流式写盘块大小 */
 /* 错误弹框直接贴原始响应；显示上限与完整落盘文件名 */
 #define UPD_MSG_CHARS    8192
 #define UPD_RAW_SHOW     2000
@@ -436,27 +441,126 @@ static int curl_download(const char *url,const wchar_t *dst,volatile LONG *abort
    给用户明确提示、释放 g_updBusy 让他可以重试。既保留 v1.2 的硬等成功率，
    又不留挂死线程。
    -------------------------------------------------------------------------- */
-static void give_raw(char **errBody,int *errLen,char *data,int len){
-  if(errBody){ *errBody=data; if(errLen)*errLen=len; }
-  else free(data);
-}
+/* --------------------------------------------------------------------------
+   下载主路径：WinINet 流式写盘。
+
+   v1.2 就是 WinINet 直下，用户实证能顺利升级；1.3 那次「修卡顿」把它包进
+   20 秒看门狗，下载几百 KB 一超时就被掐。现在下载仍接看门狗，但阈值独立
+   330 秒，并把 hUrl 交给看门狗，永久阻塞时能关掉真正阻塞的句柄。
+
+   这一版把「整个响应读进内存再 write_file_all」改成 64KB 分块 WriteFile：
+   内存恒定、16MB 以上明确失败、4xx 错误页落盘交给上层原样展示。
+   -------------------------------------------------------------------------- */
 static int wininet_download(const char *url,const wchar_t *dst,DWORD *status,
-                            HTTP_SLOTS *slots,char **errBody,int *errLen){
+                            HTTP_SLOTS *slots,volatile LONG *abort,
+                            DWORD *doneBytes){
   DeleteFileW(dst);
-  char *data=NULL; int len=0; DWORD st=0; DWORD we=0; wchar_t ext[512]=L"";
-  int ok=http_get_ex(url,NULL,&data,&len,&st,slots,UPD_DOWNLOAD_MS,
-                     &we,ext,512);
-  if(status) *status=st;
-  (void)we; (void)ext;
-  if(!ok||!data){ give_raw(errBody,errLen,data,len); return 0; }
-  /* 下下来的是不是 PE：看 MZ 头 + 体积，防止把 403/404 网页当 exe 覆盖自己 */
-  if(len<65536 || (unsigned char)data[0]!='M' || (unsigned char)data[1]!='Z'){
-    give_raw(errBody,errLen,data,len); DeleteFileW(dst); return 0;
+  if(status) *status=0;
+  if(doneBytes) *doneBytes=0;
+
+  HINTERNET hInet=InternetOpenW(L"KimiPet/" KP_VERSION_W,
+                                INTERNET_OPEN_TYPE_PRECONFIG,NULL,NULL,0);
+  if(!hInet) return 0;
+  if(slots) InterlockedExchangePointer(&slots->inet,hInet);
+
+  DWORD ct=UPD_CONNECT_MS, t=UPD_DOWNLOAD_MS;
+  InternetSetOption(hInet,INTERNET_OPTION_CONNECT_TIMEOUT,     &ct,sizeof ct);
+  InternetSetOption(hInet,INTERNET_OPTION_SEND_TIMEOUT,        &t,sizeof t);
+  InternetSetOption(hInet,INTERNET_OPTION_RECEIVE_TIMEOUT,     &t,sizeof t);
+  InternetSetOption(hInet,INTERNET_OPTION_DATA_RECEIVE_TIMEOUT,&t,sizeof t);
+
+  wchar_t wurl[2048];
+  if(MultiByteToWideChar(CP_UTF8,0,url,-1,wurl,2048)<=0){
+    hg_close(slots,NULL,hInet); return 0;
   }
-  int w=write_file_all(dst,(const unsigned char*)data,(size_t)len);
-  free(data);
-  if(!w){ DeleteFileW(dst); return 0; }
-  return 1;
+  DWORD flags = INTERNET_FLAG_RELOAD|INTERNET_FLAG_NO_CACHE_WRITE|
+                INTERNET_FLAG_NO_UI|INTERNET_FLAG_PRAGMA_NOCACHE|
+                INTERNET_FLAG_NO_COOKIES;
+  if(strncmp(url,"https://",8)==0) flags |= INTERNET_FLAG_SECURE;
+  HINTERNET hUrl=InternetOpenUrlW(hInet,wurl,
+        L"User-Agent: KimiPet/" KP_VERSION_W L"\r\n",0,flags,0);
+  if(!hUrl){ hg_close(slots,NULL,hInet); return 0; }
+  if(slots) InterlockedExchangePointer(&slots->url,hUrl);
+  InternetSetOption(hUrl,INTERNET_OPTION_RECEIVE_TIMEOUT,     &t,sizeof t);
+  InternetSetOption(hUrl,INTERNET_OPTION_DATA_RECEIVE_TIMEOUT,&t,sizeof t);
+
+  DWORD code=0, sz=sizeof code;
+  HttpQueryInfoW(hUrl,HTTP_QUERY_STATUS_CODE|HTTP_QUERY_FLAG_NUMBER,
+                 &code,&sz,NULL);
+  if(status) *status=code;
+
+  int ok=0;
+  HANDLE hf=INVALID_HANDLE_VALUE;
+  char *buf=NULL;
+  __int64 total=0;
+
+  /* 4xx/5xx：错误页也写进 dst，让上层 grab_dst 读回原始响应（限 64KB） */
+  if(code>=400){
+    hf=CreateFileW(dst,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,
+                   FILE_ATTRIBUTE_NORMAL,NULL);
+    if(hf!=INVALID_HANDLE_VALUE){
+      DWORD left=UPD_ERR_MAX;
+      char *e=(char*)malloc(4096);
+      if(e){
+        while(left){
+          DWORD got=0;
+          if(!InternetReadFile(hUrl,e,left>4096?4096:left,&got)||!got) break;
+          DWORD wr=0; WriteFile(hf,e,got,&wr,NULL);
+          left-=got;
+          if(got<4096) break;
+        }
+        free(e);
+      }
+      CloseHandle(hf); hf=INVALID_HANDLE_VALUE;
+    }
+    goto done;
+  }
+
+  hf=CreateFileW(dst,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,
+                 FILE_ATTRIBUTE_NORMAL,NULL);
+  if(hf==INVALID_HANDLE_VALUE) goto done;
+  buf=(char*)malloc(UPD_DL_BUF);
+  if(!buf) goto done;
+  ok=1;
+  for(;;){
+    if(abort && READ(abort)){ ok=0; break; }
+    DWORD got=0;
+    if(!InternetReadFile(hUrl,buf,UPD_DL_BUF,&got)){ ok=0; break; }
+    if(got==0) break;
+    DWORD wr=0;
+    if(!WriteFile(hf,buf,got,&wr,NULL)||wr!=got){ ok=0; break; }
+    total+=(__int64)got;
+    if(doneBytes) *doneBytes=(DWORD)total;
+    if(total>(__int64)UPD_MAX_BODY){ ok=0; break; }   /* 超限明确失败 */
+  }
+  CloseHandle(hf); hf=INVALID_HANDLE_VALUE;
+
+  /* 下下来的必须是 PE：MZ 头 + 合理体积，403/404 网页不能覆盖自己 */
+  if(!ok || total<65536) goto done;
+  { HANDLE rf=CreateFileW(dst,GENERIC_READ,FILE_SHARE_READ,NULL,
+          OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+    if(rf==INVALID_HANDLE_VALUE){ ok=0; goto done; }
+    LARGE_INTEGER fsz; fsz.QuadPart=0; GetFileSizeEx(rf,&fsz);
+    unsigned char mz[2]={0}; DWORD got=0;
+    ReadFile(rf,mz,2,&got,NULL); CloseHandle(rf);
+    if(fsz.QuadPart<65536 || got!=2 || mz[0]!='M' || mz[1]!='Z') ok=0;
+  }
+
+done:
+  if(hf!=INVALID_HANDLE_VALUE) CloseHandle(hf);
+  free(buf);
+  hg_close(slots,hUrl,hInet);
+  /* 失败时保留 dst 内容（错误页或非 PE 内容），由 grab_dst 读回展示 */
+  return ok;
+}
+
+/* 取 dst 当前大小：外部工具兜底链路没报进度时，用落盘字节数补一个事实值 */
+static DWORD dst_size(const wchar_t *dst){
+  HANDLE h=CreateFileW(dst,GENERIC_READ,FILE_SHARE_READ,NULL,
+        OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+  if(h==INVALID_HANDLE_VALUE) return 0;
+  LARGE_INTEGER sz; sz.QuadPart=0; GetFileSizeEx(h,&sz); CloseHandle(h);
+  return (sz.QuadPart>0 && sz.QuadPart<0x7fffffff)?(DWORD)sz.QuadPart:0;
 }
 
 /* 兜底链路是流式写文件的，失败时把已落盘的内容抓回来当原始响应。
@@ -475,22 +579,36 @@ static void grab_dst(const wchar_t *dst,char **errBody,int *errLen){
   DWORD got=0; ReadFile(h,b,(DWORD)n,&got,NULL); CloseHandle(h);
   b[got]=0; *errBody=b; if(errLen)*errLen=(int)got;
 }
+static void note_done(DWORD *maxDone,DWORD d){
+  if(maxDone && d>*maxDone) *maxDone=d;
+}
 static int download_exe(const char *url,const wchar_t *dst,DWORD *status,
-                        HTTP_SLOTS *slots,char **errBody,int *errLen){
+                        HTTP_SLOTS *slots,char **errBody,int *errLen,
+                        DWORD *maxDone){
   if(errBody)*errBody=NULL;
   if(errLen)*errLen=0;
-  if(wininet_download(url,dst,status,slots,errBody,errLen)) return 1; /* 主路径不变 */
+  if(maxDone)*maxDone=0;
+
+  DWORD d=0;
+  /* 主路径：WinINet 流式写盘（v1.2 实证可用，超时阈值独立 330s） */
+  if(wininet_download(url,dst,status,slots,
+                      slots?&slots->abort:NULL,&d)) return 1;
+  note_done(maxDone,d);
   grab_dst(dst,errBody,errLen);
-  /* 看门狗已判定超时就别再起下一条链路 */
-  if(slots && READ(&slots->abort)) return 0;
-  /* Win7 纯 C 兜底：WinHTTP，显式请求 TLS 1.2，不依赖任何外部 exe。
-     超时常量由本文件统一传入，避免两个翻译单元各存一份。 */
+  if(slots && READ(&slots->abort)) return 0;   /* 看门狗已判定超时 */
+
+  /* Win7 纯 C 兜底：WinHTTP，显式请求 TLS 1.2，不依赖任何外部 exe */
+  d=0;
   if(winhttp_download(url,dst,status,
                       slots?&slots->abort:NULL,slots?&slots->whReq:NULL,
-                      UPD_CONNECT_MS,UPD_DOWNLOAD_MS,UPD_MAX_BODY)) return 1;
+                      UPD_CONNECT_MS,UPD_DOWNLOAD_MS,UPD_MAX_BODY,&d)) return 1;
+  note_done(maxDone,d);
   grab_dst(dst,errBody,errLen);
+  if(slots && READ(&slots->abort)) return 0;
+
   /* 外部工具兜底也吃同一个 abort 标志，超时能被立刻掐掉 */
   if(curl_download(url,dst,slots?&slots->abort:NULL)) return 1;
+  note_done(maxDone,dst_size(dst));
   grab_dst(dst,errBody,errLen);
   return 0;
 }
@@ -692,6 +810,22 @@ static DWORD WINAPI upd_thread(LPVOID arg){
   net_begin(c,1);   /* API 阶段：30 秒硬超时 */
   int ok=http_get_ex(api,UPD_GH_HEADERS,&json,&jlen,&st,
                      &c->slots,UPD_TIMEOUT_MS,&we,ext,512);
+  if(!ok && !READ(&c->slots.abort)){
+    /* Win7 上 Schannel 常未启用 TLS 1.2，WinINet 连 api.github.com 都握不上
+       手 —— 这时候光给下载做兜底没用，连「有没有新版」都查不到。
+       WinHTTP 走自己的栈，纯 C、不依赖 curl/certutil/PowerShell。 */
+    char *wj=NULL; int wl=0; DWORD wst=0;
+    int wok=winhttp_get(api,UPD_GH_HEADERS,&wj,&wl,&wst,
+                        &c->slots.abort,&c->slots.whReq,
+                        UPD_CONNECT_MS,UPD_TIMEOUT_MS,UPD_API_MAX_BODY);
+    if(wok){ free(json); json=wj; jlen=wl; st=wst; ok=1; }
+    else{
+      /* 两份原始响应挑信息量大的那份贴出来，别把 403 的 JSON 丢掉 */
+      if(wj && (!json || wl>jlen)){ free(json); json=wj; jlen=wl; }
+      else free(wj);
+      if(wst) st=wst;
+    }
+  }
   net_end(c);
 
   if(!ok){
@@ -756,9 +890,9 @@ static DWORD WINAPI upd_thread(LPVOID arg){
   /* 下载：主路径 WinINet 直下（v1.2 实证可用），curl 仅兜底。
      看门狗同样覆盖这段，但用独立的 330 秒阈值 —— 1.3 那次是错在
      把下载塞进【20 秒】的 API 看门狗，不是错在"下载不该被监控"。 */
-  DWORD dlStatus=0; char *raw=NULL; int rawLen=0;
+  DWORD dlStatus=0, dlDone=0; char *raw=NULL; int rawLen=0;
   net_begin(c,2);
-  int dl=download_exe(c->url,c->src,&dlStatus,&c->slots,&raw,&rawLen);
+  int dl=download_exe(c->url,c->src,&dlStatus,&c->slots,&raw,&rawLen,&dlDone);
   net_end(c);
   /* 看门狗已提示过，这里不能再弹一次框；直接收尾并允许用户重试 */
   if(READ(&c->timedOut)){ free(raw); DeleteFileW(c->src); upd_cleanup(c); return 0; }
@@ -766,6 +900,12 @@ static DWORD WINAPI upd_thread(LPVOID arg){
     c->stage=UPD_ERR_DOWNLOAD;
     /* 403 页 / HTML / 非 PE 内容原样贴出，不猜原因 */
     upd_set_raw(c,L"下载",dlStatus,raw,rawLen,c->url,0,NULL);
+    /* 已收字节数是一条事实，判断「卡在哪一步」比任何猜测话术都有用 */
+    if(dlDone){
+      wchar_t extra[80];
+      _snwprintf(extra,80,L"[已下载] %lu 字节\n",(unsigned long)dlDone);
+      raw_cat(c,extra);
+    }
     free(raw);
     DeleteFileW(c->src);
     upd_notify(c); return 0;

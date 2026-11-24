@@ -178,7 +178,6 @@ static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l){
   case WM_LBUTTONUP:{
     if(!g_dragging) return 0;
     double now=now_ms();
-    int mx=GET_X_LPARAM(l)+g_x, my=GET_Y_LPARAM(l)+g_y;
     if(g_dragMoved<5){                       /* 基本没动 → 算点击 */
       if(g_sleepAmt>0.5) sleep_tap(now);      /* 睡着：连点 3 下叫醒 */
       else if(now>=rageUntil){

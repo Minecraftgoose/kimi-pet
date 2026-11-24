@@ -140,7 +140,8 @@ int cieq(const char *a,const char *b){
   return *a==*b;
 }
 char *ltrim(char *s){
-  while(*s==' '||*s=='\t'||*s=='\r'||*s=='\n') s++; return s;
+  while(*s==' '||*s=='\t'||*s=='\r'||*s=='\n') s++;
+  return s;
 }
 char *rtrim(char *s){
   size_t n=strlen(s);
@@ -153,7 +154,8 @@ int is_blank_or_comment(const char *s){
   return *s==0 || *s=='#' || *s==';';
 }
 wchar_t *wltrim(wchar_t *s){
-  while(*s==L' '||*s==L'\t'||*s==L'\r'||*s==L'\n') s++; return s;
+  while(*s==L' '||*s==L'\t'||*s==L'\r'||*s==L'\n') s++;
+  return s;
 }
 void wrtrim(wchar_t *s){
   size_t n=wcslen(s);

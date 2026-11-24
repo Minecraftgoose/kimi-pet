@@ -22,7 +22,8 @@ void apply_color(int idx){
     for(int i=0;i<5;i++) g_skin[i]=hsl2rgb(215,HUE_S,HUE_L);
     return;
   }
-  if(idx<0) idx=0; if(idx>=g_nColors) idx=g_nColors-1;
+  if(idx<0) idx=0;
+  if(idx>=g_nColors) idx=g_nColors-1;
   g_cfg.colorIdx=idx;
   wcsncpy(g_cfg.color, g_colors[idx].name, NAME_LEN-1);
   g_cfg.color[NAME_LEN-1]=0;

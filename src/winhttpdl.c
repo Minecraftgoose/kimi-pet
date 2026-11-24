@@ -35,9 +35,11 @@
  * connectMs / recvMs / maxBody 超时与上限统一由 update.c 传入，避免两处各存一份。 */
 int winhttp_download(const char *url,const wchar_t *dst,DWORD *status,
                      volatile LONG *abort,volatile PVOID *reqSlot,
-                     DWORD connectMs,DWORD recvMs,DWORD maxBody){
+                     DWORD connectMs,DWORD recvMs,DWORD maxBody,
+                     DWORD *doneBytes){
   DeleteFileW(dst);
   if(status) *status=0;
+  if(doneBytes) *doneBytes=0;
 
   wchar_t wurl[2048];
   if(MultiByteToWideChar(CP_UTF8,0,url,-1,wurl,2048)<=0) return 0;
@@ -98,7 +100,29 @@ int winhttp_download(const char *url,const wchar_t *dst,DWORD *status,
          WINHTTP_QUERY_STATUS_CODE|WINHTTP_QUERY_FLAG_NUMBER,
          WINHTTP_HEADER_NAME_BY_INDEX,&code,&sz,WINHTTP_NO_HEADER_INDEX))
       if(status) *status=code; }
-  if(code>=400) goto done;
+  if(code>=400){
+    /* 4xx 错误页也落盘（限 64KB），让「贴原始响应」在这条链路同样成立。
+       参考实现里 4xx 直接 goto done 不读 body，用户只能看到「无响应体」。 */
+    HANDLE ef=CreateFileW(dst,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,
+                          FILE_ATTRIBUTE_NORMAL,NULL);
+    if(ef!=INVALID_HANDLE_VALUE){
+      DWORD left=65536;
+      while(left){
+        DWORD avail=0;
+        if(!WinHttpQueryDataAvailable(hR,&avail)||!avail) break;
+        if(avail>left) avail=left;
+        char *b=(char*)malloc(avail);
+        if(!b) break;
+        DWORD got=0;
+        if(!WinHttpReadData(hR,b,avail,&got)||!got){ free(b); break; }
+        DWORD wr=0; WriteFile(ef,b,got,&wr,NULL);
+        free(b); left-=got;
+        if(got<avail) break;
+      }
+      CloseHandle(ef);
+    }
+    goto done;
+  }
 
   hf=CreateFileW(dst,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,
                  FILE_ATTRIBUTE_NORMAL,NULL);
@@ -117,6 +141,7 @@ int winhttp_download(const char *url,const wchar_t *dst,DWORD *status,
     DWORD wr=0;
     if(got && !WriteFile(hf,b,got,&wr,NULL)){ free(b); ok=0; break; }
     total+=(__int64)got;
+    if(doneBytes) *doneBytes=(DWORD)total;
     free(b);
     if(got==0) break;
   }
@@ -143,6 +168,128 @@ done:
       return 0;   /* 不是 PE：内容留着，当作原始响应展示 */
     } }
   return 1;
+}
+
+
+/* --------------------------------------------------------------------------
+   API 阶段的 WinHTTP GET 兜底。
+
+   Win7 上 Schannel 常未启用 TLS 1.2，api.github.com 的 WinINet 请求会直接
+   握手失败 —— 这时候连「有没有新版本」都查不到，光给下载做兜底没用。
+   WinHTTP 走自己的栈，显式请求 TLS 1.2，不依赖 curl / certutil / PowerShell。
+
+   与 qi_winhttp_get 一致：失败（含 4xx）也把已读到的原始响应交给调用方，
+   由调用方 free；句柄所有权交给 reqSlot，看门狗能中断阻塞读。
+   -------------------------------------------------------------------------- */
+int winhttp_get(const char *url,const wchar_t *headers,
+                char **out,int *plen,DWORD *status,
+                volatile LONG *abort,volatile PVOID *reqSlot,
+                DWORD connectMs,DWORD recvMs,DWORD maxBody){
+  *out=NULL; *plen=0;
+  if(status) *status=0;
+
+  wchar_t wurl[2048];
+  if(MultiByteToWideChar(CP_UTF8,0,url,-1,wurl,2048)<=0) return 0;
+
+  URL_COMPONENTSW uc; memset(&uc,0,sizeof uc);
+  uc.dwStructSize=sizeof uc;
+  wchar_t host[256]=L"", path[2048]=L"";
+  uc.lpszHostName=host; uc.dwHostNameLength=256;
+  uc.lpszUrlPath=path;  uc.dwUrlPathLength=2048;
+  if(!WinHttpCrackUrl(wurl,0,0,&uc)) return 0;
+  int secure=(uc.nScheme==INTERNET_SCHEME_HTTPS);
+  INTERNET_PORT port = uc.nPort ? uc.nPort
+                     : (INTERNET_PORT)(secure?INTERNET_DEFAULT_HTTPS_PORT
+                                             :INTERNET_DEFAULT_HTTP_PORT);
+
+  /* Win7 没有 Win8 才有的 AUTOMATIC_PROXY，只能用 DEFAULT_PROXY */
+  HINTERNET hS=WinHttpOpen(L"KimiPet",
+      WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,WINHTTP_NO_PROXY_NAME,
+      WINHTTP_NO_PROXY_BYPASS,0);
+  if(!hS) return 0;
+  DWORD ct=connectMs, rt=recvMs;
+  WinHttpSetOption(hS,WINHTTP_OPTION_CONNECT_TIMEOUT,&ct,sizeof ct);
+  WinHttpSetOption(hS,WINHTTP_OPTION_SEND_TIMEOUT,&rt,sizeof rt);
+  WinHttpSetOption(hS,WINHTTP_OPTION_RECEIVE_TIMEOUT,&rt,sizeof rt);
+  WinHttpSetOption(hS,WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT,&rt,sizeof rt);
+
+  HINTERNET hC=WinHttpConnect(hS,host,port,0);
+  HINTERNET hR=NULL;
+  /* ok 只在完整成功路径置 1：任何 goto done（连接失败、SendRequest 失败、
+     malloc 失败）都必须返回 0，不能因为变量初值误报成功。 */
+  int ok=0, readOk=1, failed; DWORD code=0;
+  size_t cap=16384, len=0; char *buf=NULL;
+
+  if(!hC) goto done;
+  hR=WinHttpOpenRequest(hC,L"GET",path[0]?path:L"/",NULL,
+      WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,
+      secure?WINHTTP_FLAG_SECURE:0);
+  if(!hR) goto done;
+  if(reqSlot) InterlockedExchangePointer(reqSlot,hR);
+
+  /* 显式启用 TLS 1.2。Win7 SP1 需 KB3140245；SetOption 失败忽略即可 */
+  if(secure){
+    DWORD proto = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2
+                | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_1
+                | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1
+                | WINHTTP_FLAG_SECURE_PROTOCOL_SSL3;
+    WinHttpSetOption(hR,WINHTTP_OPTION_SECURE_PROTOCOLS,&proto,sizeof proto);
+  }
+  DWORD rp=WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+  WinHttpSetOption(hR,WINHTTP_OPTION_REDIRECT_POLICY,&rp,sizeof rp);
+
+  /* headers 长度传 0 = 以 NUL 结尾自动计算，GitHub 要 User-Agent */
+  if(!WinHttpSendRequest(hR,headers,0,WINHTTP_NO_REQUEST_DATA,0,0,0) ||
+     !WinHttpReceiveResponse(hR,NULL)) goto done;
+
+  { DWORD sz=sizeof code;
+    WinHttpQueryHeaders(hR,
+        WINHTTP_QUERY_STATUS_CODE|WINHTTP_QUERY_FLAG_NUMBER,
+        WINHTTP_HEADER_NAME_BY_INDEX,&code,&sz,WINHTTP_NO_HEADER_INDEX);
+    if(status) *status=code; }
+
+  buf=(char*)malloc(cap+1);
+  if(!buf) goto done;
+  for(;;){
+    if(abort && WH_READ(abort)){ readOk=0; break; }
+    DWORD avail=0;
+    if(!WinHttpQueryDataAvailable(hR,&avail)){ readOk=0; break; }
+    if(avail==0) break;
+    if(len+avail+1>cap){
+      size_t nc=cap*2;
+      if(nc>maxBody) nc=maxBody;
+      if(nc<=len+avail+1){ readOk=0; break; }   /* 超限明确失败 */
+      char *nb=(char*)realloc(buf,nc+1);
+      if(!nb){ readOk=0; break; }
+      buf=nb; cap=nc;
+    }
+    DWORD got=0;
+    if(!WinHttpReadData(hR,buf+len,avail,&got)){ readOk=0; break; }
+    len+=got;
+    if(len>=maxBody){ readOk=0; break; }
+    if(got==0) break;
+  }
+  buf[len]=0;
+
+  /* 4xx 也判失败，但错误页原样交回调用方（403 JSON 里有 message） */
+  failed=(!readOk || code>=400 || len==0);
+  if(failed){
+    if(len>0){ *out=buf; *plen=(int)len; buf=NULL; }
+    ok=0;
+  }else{
+    *out=buf; *plen=(int)len; buf=NULL;
+    ok=1;
+  }
+
+done:
+  /* 取回句柄所有权再关：看门狗可能已经取走并关闭了 */
+  { HINTERNET mine = reqSlot
+      ? (HINTERNET)InterlockedExchangePointer(reqSlot,NULL) : hR;
+    if(mine) WinHttpCloseHandle(mine); }
+  if(hC) WinHttpCloseHandle(hC);
+  if(hS) WinHttpCloseHandle(hS);
+  free(buf);
+  return ok;
 }
 
 /* 看门狗超时时调用：关掉正在阻塞读的 WinHTTP 请求句柄，把工作线程拽出来。
