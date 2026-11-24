@@ -94,7 +94,7 @@ static void popup_menu(int x,int y){
   AppendMenuW(g_menu,MF_STRING,ID_RELOAD,L"重新加载配置");
   AppendMenuW(g_menu,MF_STRING,ID_CHECKUPD,L"检查更新…");
   AppendMenuW(g_menu,MF_STRING,ID_OPENCFG,L"打开配置文件…");
-  AppendMenuW(g_menu,MF_STRING,ID_ABOUT,L"关于 kimi 小圆球");
+  AppendMenuW(g_menu,MF_STRING,ID_ABOUT,L"关于 Kimi-Pet");
   AppendMenuW(g_menu,MF_STRING,ID_QUIT,L"退出");
 
   CheckMenuItem(g_menu,ID_TOPMOST,g_topmost    ?MF_CHECKED:MF_UNCHECKED);
@@ -261,8 +261,8 @@ static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l){
       break;
     }
     case ID_ABOUT:{
-      /* 直接打开介绍页，hash 里带上本机版本和实际配置文件路径。
-         网页会解析出来显示「来自本机的 kimi 小圆球」一条信息。 */
+      /* 打开介绍页，hash 带本机版本和实际配置路径；
+         网页端弹「关于」对话框展示这些事实（不是顶部信息条）。 */
       wchar_t url[16384];
       int built=about_url_build(url,16384,g_cfgPath);
       if(built && (INT_PTR)ShellExecuteW(NULL,L"open",url,NULL,NULL,SW_SHOW)>32) break;
@@ -270,7 +270,7 @@ static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l){
       wchar_t t[16384];
       _snwprintf(t,16384,L"[阶段] 打开介绍页\n[Win32] %lu\n[URL] %ls\n",
                  (unsigned long)GetLastError(),built?url:L"(生成失败)");
-      MessageBoxW(h,t,L"关于 kimi 小圆球",MB_OK|MB_ICONINFORMATION);
+      MessageBoxW(h,t,L"关于 Kimi-Pet",MB_OK|MB_ICONINFORMATION);
       break;
     }
     case ID_QUIT:
@@ -344,6 +344,12 @@ int WINAPI WinMain(HINSTANCE hInst,HINSTANCE hPrev,LPSTR cmd,int nShow){
   g_lastMove = now_ms();
 
   init_dpi();
+  /* 上一轮自更新把旧 exe 改名成 .bak，新进程起来后删掉它 */
+  { wchar_t self[1024],bak[1200];
+    if(GetModuleFileNameW(NULL,self,1024)){
+      _snwprintf(bak,1200,L"%ls.bak",self);
+      DeleteFileW(bak);
+    } }
   cfg_path_init();
   cfg_load();
   g_win = win_px(g_D);

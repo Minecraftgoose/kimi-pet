@@ -8,7 +8,7 @@
 
     python3 gen_downloads.py --template docs/downloads/index.html \
         --out /tmp/downloads.html --repo OWNER/REPO \
-        [--latest-tag v1.4.7] [--releases-json FILE] [--publish] [--branch main]
+        [--latest-tag v1.4.8] [--releases-json FILE] [--publish] [--branch main]
 
 --releases-json 供本地测试：喂一个 releases API 的数组 JSON，不联网。
 --publish 时优先拿默认分支上现有的页面当模板，只替换标记区间，
@@ -34,10 +34,6 @@ END_HERO = "<!-- DOWNLOADS_HERO_END -->"
 BEGIN_META = "<!-- DOWNLOADS_META_BEGIN -->"
 END_META = "<!-- DOWNLOADS_META_END -->"
 PATH = "docs/downloads/index.html"
-
-WANT = ("KimiPet_x64.exe", "KimiPet_x86.exe",
-        "KimiPetUpdater.bat", "SHA256SUMS.txt")
-
 
 def warn(msg):
     print("::warning::" + msg.replace("\n", " "), file=sys.stderr)
@@ -122,7 +118,9 @@ def build(releases, latest_tag):
     for r in rels:
         tag = r.get("tag_name") or "?"
         date = (r.get("published_at") or r.get("created_at") or "")[:10] or "—"
-        assets = {a.get("name", ""): a for a in r.get("assets", [])}
+        # Release 里可能还留着旧版上传的 bat 附件：页面不再展示这类文件
+        assets = {a.get("name", ""): a for a in r.get("assets", [])
+                  if not a.get("name", "").lower().endswith(".bat")}
         x64, x86 = assets.get("KimiPet_x64.exe"), assets.get("KimiPet_x86.exe")
         zips = [a for n, a in assets.items() if n.lower().endswith(".zip")]
 
@@ -133,7 +131,7 @@ def build(releases, latest_tag):
             ver += '<span class="tag latest">Latest</span>'
 
         extra = []
-        for n in ("KimiPetUpdater.bat", "SHA256SUMS.txt"):
+        for n in ("SHA256SUMS.txt",):
             if n in assets:
                 extra.append(file_link(assets[n]))
         for a in zips:

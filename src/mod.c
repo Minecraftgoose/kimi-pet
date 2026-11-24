@@ -1,5 +1,6 @@
 /* 锚点 / 图元 / 模组 */
 #include "pet.h"
+#include "builtin_png.h"
 
 /* ================= 锚点 =================
    本体空间：球心 (0,0)，半径 12（BODY_SIZE/2），y 向下为正。
@@ -7,22 +8,29 @@
    所以装饰会跟着球一起缩放、鼓起、挤压。                                */
 
 static const char *ANCH_NAMES[ANCH_N]={
-  "body","eye_l","eye_r","eyes","mouth","head","ear_l","ear_r","foot_l","foot_r"
+  "body","eye_l","eye_r","eyes","mouth","nose","head","ear_l","ear_r","foot_l","foot_r"
 };
 /* 几个顺手的别名 */
 static const char *ANCH_ALIAS[][2]={
   {"center","body"},{"centre","body"},{"core","body"},
   {"eye","eyes"},{"eyes_center","eyes"},{"eye_left","eye_l"},{"eye_right","eye_r"},
   {"head_top","head"},{"top","head"},
+  {"nose_tip","nose"},{"snout","nose"},
   {"ear","ear_l"},{"ear_left","ear_l"},{"ear_right","ear_r"},
   {"foot","foot_l"},{"foot_left","foot_l"},{"foot_right","foot_r"},
-  {"mouse","mouth"}
+  {"mouse","mouth"}   /* 历史拼写笔误，保留兼容，别删 */
 };
 
 static const double ANCH_MOUTH_Y= 4.6,
+                    ANCH_NOSE_Y = 1.3,
                     ANCH_HEAD_Y =-11.7,
                     ANCH_EAR_X  = 7.4,  ANCH_EAR_Y = -8.3,
                     ANCH_FOOT_X = 5.2,  ANCH_FOOT_Y= 11.3;
+/* 五官（鼻/嘴）朝视线方向轻微平移的系数。眼睛直接在球面上滑动，单侧
+   能走 ~2.8 个本体单位；这里只取远小于它的比例，让整张脸「跟着看一点」
+   而不至于五官错位。正视(gaze=0)时偏移为 0，出厂外观不变。 */
+static const double ANCH_FACE_FOLLOW_X = 0.7,
+                    ANCH_FACE_FOLLOW_Y = 0.35;
 
 double g_anchX[ANCH_N], g_anchY[ANCH_N], g_anchRot[ANCH_N];
 
@@ -66,7 +74,11 @@ void update_anchors(void){
   anch_at(A_EYE_R,rx,ry,sharedRot);
   anch_at(A_EYES,(lx+rx)*0.5,(ly+ry)*0.5,sharedRot);
   anch_at(A_BODY,0,0,sharedRot);
-  anch_on_body(A_MOUTH,   0.0, ANCH_MOUTH_Y);
+  /* 鼻/嘴：本体空间里先加一点视线偏移，再走 anch_on_body，
+     这样挤压 sq 与整球 roll 仍然照常作用（方案 2，不新增任何表情逻辑）。 */
+  double fx = gazeX*ANCH_FACE_FOLLOW_X, fy = gazeY*ANCH_FACE_FOLLOW_Y;
+  anch_on_body(A_MOUTH, fx, ANCH_MOUTH_Y+fy);
+  anch_on_body(A_NOSE,  fx, ANCH_NOSE_Y +fy);
   anch_on_body(A_HEAD_TOP,0.0, ANCH_HEAD_Y);
   anch_on_body(A_EAR_L, -ANCH_EAR_X, ANCH_EAR_Y);
   anch_on_body(A_EAR_R,  ANCH_EAR_X, ANCH_EAR_Y);
@@ -564,6 +576,11 @@ const BuiltinMod BUILTIN_MODS[] = {
 "r = .5\n"
 "color = #ff0000\n"
 "[part]\n"
+"at = nose\n"
+"shape = circle\n"
+"r = .5\n"
+"color = #ff00ff\n"
+"[part]\n"
 "at = head\n"
 "shape = circle\n"
 "r = .5\n"
@@ -588,9 +605,39 @@ const BuiltinMod BUILTIN_MODS[] = {
 "shape = circle\n"
 "r = .5\n"
 "color = #ff0000\n"
+},
+{ "星星眼.ini",
+"[mod]\n"
+"name = 星星眼\n"
+"enabled = 0\n"
+"\n"
+"; 两颗星分别挂在左右眼中心，会跟着眼神动、跟着球缩放鼓起\n"
+"; 同一个 PNG 被两个 part 引用，程序只解码一次\n"
+"[part]\n"
+"at = eye_l\n"
+"shape = image\n"
+"src = 星星.png\n"
+"w = 6.2\n"
+"\n"
+"[part]\n"
+"at = eye_r\n"
+"shape = image\n"
+"src = 星星.png\n"
+"w = 6.2\n"
 }
 };
 const int N_BUILTIN_MODS = (int)(sizeof(BUILTIN_MODS)/sizeof(BUILTIN_MODS[0]));
+
+#ifndef RENDER_TEST
+/* 内置模组要用的 PNG：字节随 exe 一起编译，首次运行（或老用户升级）
+   和 ini 一起写进 mod\。文件名必须与 ini 里的 src 完全一致。 */
+typedef struct { const wchar_t *file; const unsigned char *data; unsigned int len; } BuiltinImg;
+static const BuiltinImg BUILTIN_IMGS[] = {
+  { L"星星.png", BUILTIN_PNG_STAR, BUILTIN_PNG_STAR_LEN },
+};
+static const int N_BUILTIN_IMGS =
+  (int)(sizeof(BUILTIN_IMGS)/sizeof(BUILTIN_IMGS[0]));
+#endif
 
 static double part_bound(ModPart *P,double *pp){
   switch(P->kind){
@@ -706,6 +753,12 @@ void mods_write_builtin(void){
     if(GetFileAttributesW(path)!=INVALID_FILE_ATTRIBUTES) continue;
     write_file_all(path,(const unsigned char*)BUILTIN_MODS[i].text,
                    strlen(BUILTIN_MODS[i].text));
+  }
+  for(int i=0;i<N_BUILTIN_IMGS;i++){
+    wchar_t path[1024];
+    _snwprintf(path,1024,L"%ls\\%ls",g_modDir,BUILTIN_IMGS[i].file);
+    if(GetFileAttributesW(path)!=INVALID_FILE_ATTRIBUTES) continue;
+    write_file_all(path,BUILTIN_IMGS[i].data,BUILTIN_IMGS[i].len);
   }
 }
 

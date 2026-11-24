@@ -3,7 +3,7 @@
 
 /* ================= 检查更新 =================
    查 GitHub 上本仓库的最新 Release；比当前版本新的话，下载对应架构的 exe，
-   写个 bat 等本进程退出后覆盖并重启自己。
+   用 Win32 API 直接自替换并重启，不生成任何脚本文件。
 
    下载主路径用 WinINet 直下 —— 这是 v1.2 实证能走通的链路。曾经把它换掉，
    又在「修卡顿」时把下载包进 20 秒看门狗，结果检测得到更新、exe 永远下不下来。
@@ -152,8 +152,7 @@ enum {
   UPD_ERR_NOASSET,     /* 新版本但缺对应 exe */
   UPD_ASK,             /* 问用户要不要更新（主线程必须回 answer） */
   UPD_ERR_DOWNLOAD,    /* 下载失败 */
-  UPD_ERR_BAT,         /* 写覆盖脚本失败 */
-  UPD_DO_REPLACE       /* 主线程启动 bat 并退出 */
+  UPD_DO_REPLACE       /* 主线程做 exe 自替换并重启 */
 };
 
 /* 看门狗单独发的超时提示，不依赖 UPD_CTX 的生命周期 */
@@ -175,7 +174,7 @@ typedef struct {
   DWORD   status;
   wchar_t msg[UPD_MSG_CHARS];
   char    tag[64], url[1024];
-  wchar_t src[1200], dst[1200], bat[1200];
+  wchar_t src[1200];
 
   HANDLE  ev;              /* 自动重置：每次 SetEvent 只唤醒一次 Wait */
   HANDLE  watch;           /* 看门狗线程句柄 */
@@ -496,40 +495,6 @@ static int download_exe(const char *url,const wchar_t *dst,DWORD *status,
   return 0;
 }
 
-/* 写一个 bat：等本进程结束 → 用新 exe 覆盖 → 启动 → 自删 */
-static int write_updater_bat(const wchar_t *bat,const wchar_t *src,const wchar_t *dst){
-  DWORD pid=GetCurrentProcessId();
-  wchar_t tmp[4096];
-  _snwprintf(tmp,4096,
-    L"@echo off\r\n"
-    L":wait\r\n"
-    L"tasklist /FI \"PID eq %lu\" 2>nul | find \"%lu\" >nul\r\n"
-    L"if not errorlevel 1 (\r\n"
-    L"  ping -n 2 127.0.0.1 >nul\r\n"
-    L"  goto wait\r\n"
-    L")\r\n"
-    L"copy /y \"%ls\" \"%ls\" >nul\r\n"
-    L"if errorlevel 1 (\r\n"
-    L"  ping -n 3 127.0.0.1 >nul\r\n"
-    L"  copy /y \"%ls\" \"%ls\" >nul\r\n"
-    L")\r\n"
-    L"del /f /q \"%ls\" >nul 2>&1\r\n"
-    L"start \"\" \"%ls\"\r\n"
-    L"del \"%%~f0\"\r\n",
-    pid,pid,src,dst,src,dst,src,dst);
-  /* bat 由 cmd.exe 按 OEM 代码页逐字节解析。以前写 UTF-8 再靠 chcp 65001
-     撑着，中文 Windows（GBK）下路径会乱码 → copy 失败 → 覆盖没做成。
-     改成系统 OEM 代码页编码、不加 chcp，中文路径才能被正确读到。 */
-  int k=WideCharToMultiByte(CP_OEMCP,0,tmp,-1,NULL,0,NULL,NULL);
-  if(k<=0) return 0;
-  unsigned char *b=(unsigned char*)malloc((size_t)k);
-  if(!b) return 0;
-  WideCharToMultiByte(CP_OEMCP,0,tmp,-1,(char*)b,k,NULL,NULL);
-  int ok=write_file_all(bat,b,(size_t)k-1);
-  free(b);
-  return ok;
-}
-
 /* --------------------------------------------------------------------------
    看门狗：WinINet 的超时选项在部分环境（包括 wine、某些代理）根本不生效，
    所以这里自己计时。netKind 区分 API(1) / 下载(2)，阈值各自独立。
@@ -784,16 +749,9 @@ static DWORD WINAPI upd_thread(LPVOID arg){
   if(c->answer!=IDYES){ upd_cleanup(c); return 0; }
 
   /* 下载也在工作线程，UI 全程不阻塞 */
-  wchar_t tmpdir[1024],self[MAX_PATH];
+  wchar_t tmpdir[1024];
   if(GetTempPathW(1024,tmpdir)==0) tmpdir[0]=0;
-  if(!GetModuleFileNameW(NULL,self,MAX_PATH)){
-    c->stage=UPD_ERR_BAT;
-    upd_set_raw(c,L"更新脚本",0,NULL,0,NULL,GetLastError(),NULL);
-    upd_notify(c); return 0;
-  }
   _snwprintf(c->src,1200,L"%lsKimiPet_update_%lu.exe",tmpdir,GetCurrentProcessId());
-  _snwprintf(c->bat,1200,L"%lsKimiPet_update_%lu.bat",tmpdir,GetCurrentProcessId());
-  wcscpy(c->dst,self);
 
   /* 下载：主路径 WinINet 直下（v1.2 实证可用），curl 仅兜底。
      看门狗同样覆盖这段，但用独立的 330 秒阈值 —— 1.3 那次是错在
@@ -813,19 +771,12 @@ static DWORD WINAPI upd_thread(LPVOID arg){
     upd_notify(c); return 0;
   }
   free(raw);
-  if(!write_updater_bat(c->bat,c->src,c->dst)){
-    c->stage=UPD_ERR_BAT;
-    upd_set_raw(c,L"更新脚本",0,NULL,0,NULL,GetLastError(),NULL);
-    DeleteFileW(c->src);
-    upd_notify(c); return 0;
-  }
-
   c->stage=UPD_DO_REPLACE;
   upd_notify(c);
   return 0;
 }
 
-/* 主线程收到线程消息后调用：只负责弹框 / 启动脚本，绝不碰网络 */
+/* 主线程收到线程消息后调用：只负责弹框 / 自替换，绝不碰网络 */
 void upd_on_message(HWND h,void *p){
   UPD_CTX *c=(UPD_CTX*)p;
   if(!c) return;
@@ -833,17 +784,39 @@ void upd_on_message(HWND h,void *p){
     case UPD_ASK:
       c->answer=MessageBoxW(h,c->msg,L"检查更新",MB_YESNO|MB_ICONINFORMATION);
       break;
-    case UPD_DO_REPLACE:
-      if((INT_PTR)ShellExecuteW(NULL,L"open",c->bat,NULL,NULL,SW_SHOW)<=32){
-        DWORD e=GetLastError();
-        DeleteFileW(c->src); DeleteFileW(c->bat);
-        upd_set_raw(c,L"启动更新脚本",0,NULL,0,NULL,e,NULL);
+    case UPD_DO_REPLACE:{
+      /* 纯 C 自替换：运行中的 exe 不能覆盖，但同卷改名是允许的。
+         先把自己挪成 .bak，把下载的新 exe 复制到原名，启动新进程后退出；
+         全程不生成任何脚本文件，新进程启动时会删掉 .bak。 */
+      DWORD e=0;
+      wchar_t self[1200],bak[1400];
+      if(!GetModuleFileNameW(NULL,self,1200)) e=GetLastError();
+      else{
+        _snwprintf(bak,1400,L"%ls.bak",self);
+        DeleteFileW(bak);                       /* 清掉更早一轮的遗留 */
+        if(!MoveFileExW(self,bak,MOVEFILE_REPLACE_EXISTING)) e=GetLastError();
+        else if(!CopyFileW(c->src,self,FALSE)){
+          e=GetLastError();
+          MoveFileExW(bak,self,MOVEFILE_REPLACE_EXISTING);      /* 回滚 */
+        }else{
+          DeleteFileW(c->src);
+          if((INT_PTR)ShellExecuteW(NULL,L"open",self,NULL,NULL,SW_SHOW)<=32){
+            e=GetLastError();
+            DeleteFileW(self);
+            MoveFileExW(bak,self,MOVEFILE_REPLACE_EXISTING);    /* 启动失败也回滚 */
+          }else{
+            if(g_menu){ DestroyMenu(g_menu); g_menu=NULL; }
+            PostQuitMessage(0);
+          }
+        }
+      }
+      if(e){
+        DeleteFileW(c->src);
+        upd_set_raw(c,L"替换",0,NULL,0,NULL,e,NULL);
         MessageBoxW(h,c->msg,L"检查更新",MB_OK|MB_ICONWARNING);
-      }else{
-        if(g_menu){ DestroyMenu(g_menu); g_menu=NULL; }
-        PostQuitMessage(0);
       }
       break;
+    }
     default:
       MessageBoxW(h,c->msg,L"检查更新",
                   c->stage==UPD_LATEST?MB_OK|MB_ICONINFORMATION:MB_OK|MB_ICONWARNING);

@@ -1,6 +1,6 @@
-# kimi小圆球
+# Kimi-Pet
 
-一个会自己东张西望的小Kimi，住在你的桌面上。
+一个会自己东张西望的 Kimi-Pet，住在你的桌面上。
 
 
 <div align="center"><img width="137" height="137" alt="图片" src="https://github.com/user-attachments/assets/bdbb817d-cf9e-4abf-8092-ee0d0b525b55" /></div>
@@ -23,12 +23,13 @@ src/
   ├─ config.c    KimiPet.ini：解析、写回、缺键自动升级、路径定位
   ├─ mod.c       锚点、图元（SDF 绘制）、mod\ 目录里的模组
   ├─ tex.c       PNG 解码（自带 inflate）与锚点贴图绘制
+  ├─ builtin_png.h 内置「星星眼」用的 PNG 字节（用户提供的星星，黑底已抠透明）
   ├─ render.c    球体状态、位图缓冲、运动与绘制
-  ├─ update.c    检查更新：查 GitHub Release、下载、写覆盖脚本
+  ├─ update.c    检查更新：查 GitHub Release、下载、纯 C 自替换并重启
   ├─ winhttpdl.c WinHTTP 下载
   ├─ main.c      窗口、右键菜单、鼠标钩子、开机自启、入口
   ├─ icon.rc  KimiPet.ico
-  └─ build.sh  build.bat
+  └─ build.sh
 ```
 
 编译：
@@ -37,7 +38,7 @@ src/
 cd src && sh build.sh        # 产物写到 ../../exe（仓库外）
 ```
 
-改 `build.sh` 里的 `SRCS` 就能加减文件；`build.bat` 同理。
+改 `build.sh` 里的 `SRCS` 就能加减文件。
 
 ## 下载
 
@@ -65,7 +66,7 @@ cd src && sh build.sh        # 产物写到 ../../exe（仓库外）
 | 右键 → 模组 | 勾选即可戴上/摘下 `mod\` 里的模组，改完立刻生效 |
 | 右键 → 呼吸训练 | 球放大 = 吸气、缩小 = 呼气、不动 = 屏息，眼睛跟着睁合，一直循环 |
 | 右键 → 呼吸节奏 | 等长 / 长呼气 / 慢一点，点一下自动写好吸气、呼气秒数 |
-| 右键 | 菜单：颜色 / 模组 / 始终置顶 / 跟随鼠标 / 开机自启 / 呼吸训练 / 呼吸节奏 / 重新居中 / 检查更新… / 重新加载配置 / 打开配置文件… / 关于 kimi 小圆球 / 退出 |
+| 右键 | 菜单：颜色 / 模组 / 始终置顶 / 跟随鼠标 / 开机自启 / 呼吸训练 / 呼吸节奏 / 重新居中 / 检查更新… / 重新加载配置 / 打开配置文件… / 关于 Kimi-Pet / 退出 |
 
 ### 换颜色
 
@@ -83,7 +84,7 @@ cd src && sh build.sh        # 产物写到 ../../exe（仓库外）
 
 ## 配置文件
 
-第一次启动，exe 旁边会生成 `KimiPet.ini`（UTF-8）。exe 放在没写权限的目录时（比如 Program Files），改放到 `%APPDATA%\KimiPet\KimiPet.ini`。右键 → **关于 kimi 小圆球** 会直接打开介绍页，页面顶部显示本机版本和这个**实际路径**；把文件删掉，下次启动会按出厂设置重新生成一份。
+第一次启动，exe 旁边会生成 `KimiPet.ini`（UTF-8）。exe 放在没写权限的目录时（比如 Program Files），改放到 `%APPDATA%\KimiPet\KimiPet.ini`。右键 → **关于 Kimi-Pet** 打开介绍页，页面弹出「关于」对话框显示版本和这个**实际路径**；把文件删掉，下次启动会按出厂设置重新生成一份。
 
 改完保存 → 右键菜单点 **重新加载配置** 立刻生效，不用重启；点 **打开配置文件…** 直接用记事本打开它。
 
@@ -161,7 +162,7 @@ color        = 淡蓝   ; 当前配色，名字要对得上 [colors] 里的某�
 
 ## 模组
 
-exe 同级会有一个 `mod\` 文件夹，里面一个 `.ini` 就是一个模组。首次运行会自动生成三个示例（默认全关）：`兔耳.ini`、`猫耳（白）.ini`、`锚点调试.ini`。
+exe 同级会有一个 `mod\` 文件夹，里面一个 `.ini` 就是一个模组。首次运行会自动生成四个内置模组（默认全关）：`兔耳.ini`、`猫耳（白）.ini`、`锚点调试.ini`、`星星眼.ini`。星星眼用的一张 `星星.png` 也一起写进来。
 
 升级到新版时，新增的内置模组会**自动补进已有的 `mod\` 文件夹**，已经存在的文件一律不覆盖 —— 你改过参数的、自己加的模组都原样保留。
 
@@ -176,20 +177,24 @@ exe 同级会有一个 `mod\` 文件夹，里面一个 `.ini` 就是一个模组
 ### 锚点
 
 装饰不是写死坐标，而是挂在锚点上，所以会跟着球一起缩放、鼓起、歪头、眼神转动。
+鼻子和嘴也会朝视线方向**轻微**偏一点（幅度远小于眼睛，不会五官错位）；正视时完全不动，出厂外观不变。
 
 | 锚点 | 位置 |
 |---|---|
 | `body` | 球心 |
 | `eye_l` `eye_r` | 左右眼中心，**跟着眼神动** |
 | `eyes` | 双眼中点（画鼻梁、眉毛用这个） |
+| `nose` | 鼻子（眼睛与嘴之间） |
 | `mouth` | 嘴 |
 | `head` | 头顶 |
 | `ear_l` `ear_r` | 左右耳根 |
 | `foot_l` `foot_r` | 左右脚 |
 
-别名：`center`→body、`head_top`/`top`→head、`eye`→eyes、`ear`→ear_l、`foot`→foot_l。
+`eye_l` `eye_r` `eyes` 完全跟着眼球滑动；`nose` `mouth` 只做轻微跟随，仍吃挤压与整球歪头。想画两眼之间的东西（鼻梁、眉毛）用 `eyes`，想画贴在脸上的鼻子用 `nose`。
 
-坐标单位统一是**球半径 = 12**，球心为原点，y 向下为正。想确认锚点在哪，把「锚点调试」模组打开，每个锚点会点一个红点。
+别名：`center`→body、`head_top`/`top`→head、`nose_tip`/`snout`→nose、`eye`→eyes、`ear`→ear_l、`foot`→foot_l。
+
+坐标单位统一是**球半径 = 12**，球心为原点，y 向下为正。想确认锚点在哪，把「锚点调试」模组打开，每个锚点会点一个红点（`nose` 是洋红点，方便和 `mouth` 区分）。
 
 
 ### 一个模组文件长什么样
@@ -267,9 +272,11 @@ color = #262626
 
 ### 贴图
 
-`shape = image` 可以直接把一张 PNG 贴到锚点上，和其它图元一样跟着球缩放、鼓起、歪头，也能用 `dx` `dy` `rot` `scale` `alpha` `layer` 调位置。图片放在 `mod\` 里，和 ini 同级：
+`shape = image` 可以直接把一张 PNG 贴到锚点上，和其它图元一样跟着球缩放、鼓起、歪头，也能用 `dx` `dy` `rot` `scale` `alpha` `layer` 调位置。图片放在 `mod\` 里，和 ini 同级。
 
-把 PNG 和 ini 一起放进 `mod\` 就行，不需要改程序、也没有内置的贴图示例：
+内置的**星星眼**就是这么做的：两个 `[part]` 分别挂在 `eye_l` / `eye_r`，共用一张 `星星.png`，星星会跟着眼神动。右键 → 模组 → 勾上「星星眼」即可，默认关闭。
+
+除了内置那个，你随时可以自己加：把 PNG 和 ini 一起放进 `mod\` 就行，不需要改程序：
 
 ```ini
 [mod]
@@ -292,13 +299,10 @@ dy = -1      ; 再往上挪一点
 ## 自己编译
 
 ```bash
-# Linux （需 mingw-w64）
-sudo apt install mingw-w64      
 sh build.sh
-
-# Windows（需 MinGW-w64：MSYS2 的 mingw64 shell 或 w64devkit）
-build.bat
 ```
+
+需要 mingw-w64。Windows 下用 MSYS2 / w64devkit 自带的 `sh` 跑同一条命令即可。
 
 
 ## 想改外观？
@@ -315,7 +319,8 @@ build.bat
 | `g_skin[]` / `[colors]` | 球体五层配色与预设色（默认 8 色写在 `KimiPet.ini` 里） |
 | `HUE_S` `HUE_L` | 预设色的默认饱和度与明度 |
 | `size_min` `size_max` | 球直径的上下限（在 `KimiPet.ini` 里改，不用重编译） |
-| `ANCH_MOUTH_Y` 等 | 各锚点在球面上的位置，单位是球半径（=12） |
+| `ANCH_MOUTH_Y` `ANCH_NOSE_Y` 等 | 各锚点在球面上的位置，单位是球半径（=12） |
+| `ANCH_FACE_FOLLOW_X/Y` | 鼻/嘴跟随视线方向的比例；保持远小于眼睛的滑动幅度，别调大 |
 
 
 ## 目录约定

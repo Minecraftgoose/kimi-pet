@@ -48,9 +48,9 @@ extern double g_simNow;
 /* ---------------- 版本 / 仓库（自动更新用） ---------------- */
 #define KP_VERSION_MAJOR 1
 #define KP_VERSION_MINOR 4
-#define KP_VERSION_PATCH 7
-#define KP_VERSION_STR   "v1.4.7"
-#define KP_VERSION_W    L"v1.4.7"
+#define KP_VERSION_PATCH 8
+#define KP_VERSION_STR   "v1.4.8"
+#define KP_VERSION_W    L"v1.4.8"
 #define KP_REPO_OWNER    "Minecraftgoose"
 #define KP_REPO_NAME     "kimi-pet"
 #define KP_REPO_OWNER_W  L"Minecraftgoose"
@@ -95,7 +95,7 @@ typedef struct { size_t secStart, secEnd, T; int secFound; } CFG_SEC;
 typedef struct { const wchar_t *sec,*key,*val,*cmt; } CFG_FIELD;
 
 /* ---------------- 锚点 ---------------- */
-enum { A_BODY=0, A_EYE_L, A_EYE_R, A_EYES, A_MOUTH, A_HEAD_TOP,
+enum { A_BODY=0, A_EYE_L, A_EYE_R, A_EYES, A_MOUTH, A_NOSE, A_HEAD_TOP,
        A_EAR_L, A_EAR_R, A_FOOT_L, A_FOOT_R, ANCH_N };
 
 /* ---------------- 图元 ---------------- */

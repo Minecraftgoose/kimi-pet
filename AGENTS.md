@@ -7,7 +7,8 @@
 3. **未经允许禁止擅自升级版本号**
 4. 交付时将 exe 产物与源码包进一个 zip，此 zip 内置两个文件夹：一个是源码，一个是 exe 产物
 5. 所有 C 源码与构建脚本放 `src/` 下，仓库根目录只放文档与 `.github/`
-6. 也就是说，交付时的.zip应该长这样
+6. **产品名一律写 `Kimi-Pet`**：文档标题、菜单、网页文案、exe 版本资源（CompanyName / ProductName / FileDescription）、注释与 aria-label 都用这个写法；禁止再出现任何中文昵称或旧称（包括用来举例说明禁令时，也不要把旧称写出来）。`KimiPet*` 是文件名 / 类名 / ini 名 / 宏等技术标识符，保持不变 —— 改它会连带破坏 CI、更新器的架构名匹配和用户配置路径。
+7. 也就是说，交付时的.zip应该长这样
 ```
 KimiPet_源码与程序
 ├─ 软件
@@ -87,24 +88,21 @@ KimiPet_源码与程序
 - **`memset` 参数错位**：`memset(&P,sizeof(P),0)` 是错的，正确是 `memset(&P,0,sizeof P)`。
 - **`_snwprintf` 宽字符串**必须用 `%ls`，不能用 `%s`。
 - **需求有歧义时别自己挑一个解释闷头做**：先按上下文还原，仍拿不准就问一句。曾把「不动代表屏息」读成「不设屏息相」，把该做的四相循环砍成了两相，下一轮才补回来。
-- **bat 里定位文件别用带引号的通配符，也别依赖 `pushd`**：`for %%f in ("%~dp0*.exe")` 拿到的是字面字符串，不展开；而 `pushd` 在部分 cmd / wine 环境会直接失败（实测 `PUSHD FAILED`）。可靠写法是 `dir /b /o-d "路径\*.exe" 2^>nul` 配 `for /f "delims="`，再自己拼全路径、`%%~ff` 取绝对路径。曾经因此找不到旧文件名 `MiniPet_x64.exe`。
-- **所有 `.bat` 必须纯 ASCII**：注释、`echo`、`title`、`REM` 一律英文，不写中文、不用全角标点，也不要 `chcp 65001`（部分 cmd 代码页下 bat 文件按 ANSI 解析，一个中文就可能整段失效）。交付前用「字节 ≥ 128 计数为 0」校验，包括 `KimiPetUpdater.bat` 和 `build.bat`。**程序运行时生成的覆盖 bat 同样适用**：用 `CP_OEMCP` 编码、不加 chcp，否则中文路径在 GBK cmd 下乱码、`copy` 静默失败。
-- **`docs/index.html` 里的小圆球用桌面版 Canvas 网页原型，别再手搓 SVG**：球面投影眼睛、果冻形变、眨眼、按住注视、连点 5 次生气、5 层渐变都要按原型来。原型原本是全屏 canvas，嵌进介绍页必须做四处局部化：收进 `.stage` 容器、resize 用舞台 rect、指针坐标换成相对 canvas 的局部坐标、去掉铺满全屏的白色 `fillRect` 改成 `clearRect` 透明。`touch-action:none` 只能加在 `.stage` 上，加到 `body` 会让整页没法滚动。换色走独立色点，别占用球本身的点击（那是「逗它」）。
+- **`docs/index.html` 里的 Kimi-Pet 用桌面版 Canvas 网页原型，别再手搓 SVG**：球面投影眼睛、果冻形变、眨眼、按住注视、连点 5 次生气、5 层渐变都要按原型来。原型原本是全屏 canvas，嵌进介绍页必须做四处局部化：收进 `.stage` 容器、resize 用舞台 rect、指针坐标换成相对 canvas 的局部坐标、去掉铺满全屏的白色 `fillRect` 改成 `clearRect` 透明。`touch-action:none` 只能加在 `.stage` 上，加到 `body` 会让整页没法滚动。换色走独立色点，别占用球本身的点击（那是「逗它」）。
 - **两个 HTML 页面都要适配各种屏幕，别只顾桌面**：`docs/index.html` 和 `docs/downloads/index.html` 的样式与脚本都内嵌、不依赖第三方 CDN。流式尺寸用 `clamp()`，列用 `repeat(auto-fit,minmax(min(100%,Npx),1fr))`（`minmax(250px,1fr)` 在窄屏会溢出），表格套 `.table-wrap{overflow-x:auto}` 且在 ≤720px 拆成卡片（`td::before` 读 `data-label`），断点覆盖 320 / 360 / 480 / 720 / 900 / 1600px、横屏矮屏、超宽屏、`prefers-color-scheme:dark`、`prefers-reduced-motion`、打印，还要带 `env(safe-area-inset-*)` 和 `text-size-adjust:100%`。canvas 舞台用 `aspect-ratio:1/1` + `clamp()`，除 `window.resize` 外要挂 `ResizeObserver`（字体加载/滚动条/分屏不会触发 resize）。交付前用 Chromium 在 ≥10 个视口实测 `scrollWidth-clientWidth == 0`、球有像素、JS 零错误。
 - **别把「断网 / 离线可看 / 单文件零外部资源」当卖点写进网页或文档**：本来就是网页，用户联网打开，反复强调离线很跑偏。样式脚本内嵌是为了不依赖第三方 CDN，不是为了让谁断网看；该引用同站静态文件（图标）就大方引用，别为了凑「零请求」把东西全 base64 进去。
 - **两页的图标用软件本体的 ico**：`docs/favicon.ico` 就是 `src/KimiPet.ico`（14 帧多尺寸，16~256px），`KimiPet.ico` 改了要同步拷一份到 `docs/`。head 里 `<link rel="icon" type="image/x-icon">`，页脚品牌处也放一张 20px 小图。**Pages 是项目页 `/kimi-pet/`，图标路径必须相对**：介绍页 `favicon.ico`、下载页 `../favicon.ico`，写 `/favicon.ico` 会指到 github.io 根域名而 404。
 - **`/downloads/` 表格由 CI 生成，绝不手工编辑**：`docs/downloads/index.html` 里用 `<!-- DOWNLOADS_HERO_BEGIN/END -->`、`<!-- DOWNLOADS_META_BEGIN/END -->`、`<!-- DOWNLOADS_ROWS_BEGIN/END -->` 三对标记包住动态内容。`.github/scripts/gen_downloads.py` 每次 push（含分支 push，与「只有 tag 才打包」不冲突，它只写文档）从 Releases API 拉全部非 draft 版本，写每个附件的 `browser_download_url` 直链，再用 contents API 写回默认分支；内容相同不提交，消息带 `[skip ci]`（GITHUB_TOKEN 创建的 commit 本来也不触发 workflow）。**写回时若远端页面已有标记，必须用远端内容当模板**，否则 tag 打在旧 commit 上会把 main 上更新的样式覆盖掉。draft 要排除、prerelease 要标注、只有 zip 的老版本要如实写「早期版本只提供 zip」、tag/URL 一律 HTML 转义。页面里预置当前真实数据，保证 CI 尚未跑过或 API 临时不可用时表格也不是空的。
 - **功能卡图标用内嵌的 Microsoft Fluent Emoji 3D PNG，不用字符 emoji**：从 `microsoft/fluentui-emoji` 的 `assets/<Name>/3D/<name>_3d.png` 取（jsDelivr 的 `cdn.jsdelivr.net/gh/...` 可下，`raw.githubusercontent.com` 在沙盒里不通），缩到 72×72 再 base64 内嵌进 `docs/index.html`，避免依赖第三方图片服务。目录名是 CLDR 短名（`Sleeping face` / `Counterclockwise arrows button`，不是 Sleeping Face），写错会 404。别用字符 emoji 顶替 —— 各平台字体渲染不一致。
-- **「关于 kimi 小圆球」直接打开介绍页，别弹信息框**：URL 形如 `https://minecraftgoose.github.io/kimi-pet/#<版本>&<配置文件路径>`。路径必须 UTF-8 percent-encoding，让 `decodeURIComponent` 能还原中文/空格/反斜杠，且 `&` `#` 要编码成 `%26` `%23`，否则网页解析会断在第一个 `&`。`about_url_build()` 放 `util.c`（纯字符串函数，RENDER_TEST 可断言），先算总长再写，缓冲不够就保持 `out[0]=0` 返回失败，别留半个 URL。网页端解析 hash 并在页面**最顶部**显示「来自本机的 kimi 小圆球」信息条（版本 + 配置路径 + 版本不一致提示），同时监听 `hashchange`；不带 hash 时完全隐藏。打开失败只显示 URL 与 Win32 错误码。
+- **「关于 Kimi-Pet」打开介绍页带 hash，网页端用弹窗展示，别改成软件 MessageBox**：`about_url_build()` 在 `util.c`（纯字符串函数，RENDER_TEST 可断言），URL 形如 `https://minecraftgoose.github.io/kimi-pet/#<版本>&<配置文件路径>`，路径 UTF-8 percent-encoding，网页端 `decodeURIComponent` 还原中文/空格/反斜杠，`&` `#` 要编成 `%26` `%23`。`main.c` 的 `ID_ABOUT` 用 `ShellExecuteW` 打开，失败才给 URL 与 Win32 错误码。**网页侧展示用 `<dialog>` 弹窗（`#aboutDlg` + `showModal()`），不要用顶部 `<aside>` 信息条**：带 hash 打开时自动弹，显示版本、实际配置路径、版本不一致提示；不带 hash 时完全不弹，页脚另留「关于」入口手动打开（显示页面版本与简介）。弹窗要能 Esc / 点遮罩 / 按钮关闭，监听 `hashchange`，打印时隐藏，窄屏不溢出。
 - **页脚别堆成几行散 `<p>`**：`.foot-top` 用 flex 两栏（左品牌+版权，右导航链接），下面单独一行 `.foot-note` 放免责声明，移动端堆叠。
-- **版本号显示带 `v` 前缀**（`v1.4.7`），比较用数字宏不影响。
+- **版本号显示带 `v` 前缀**（`v1.4.8`），比较用数字宏不影响。
 - **发版必须打 tag，且只有 tag / `workflow_dispatch` 才「打包」**：`release.yml` 里 `should_package` 控制「整理产物 + 上传 Artifacts」，`should_release` 控制「发 Release」，两个 output 分开写，别图省事共用一个。分支 push → 只编译 + 检查产物（编译校验仍要做），`dist/` 不生成、不传 Artifacts、不发布；tag push / dispatch → 全做。幂等跳过（同名 Release 已存在且附件齐全）只把 `should_release` 置 false，**`should_package` 保持 true**，产物包照样生成方便对照。早期版本曾用 `should_release` 兼管打包，结果重跑同名 tag 时连 Artifact 都消失。
-- **Release 附件平铺、不打包 zip**；必须有独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`（「检查更新」按架构名找），外加 `KimiPetUpdater.bat` 供老版本用户手动升级。
+- **Release 附件平铺、不打包 zip**；只放独立的 `KimiPet_x64.exe` / `KimiPet_x86.exe`（「检查更新」按架构名找）和 `SHA256SUMS.txt`，不放任何 `.bat`。
 - **老 .NET 没有 `Tls12` 具名枚举**：PowerShell 2.0 / .NET 3.5 的 `SecurityProtocolType` 只有 `Ssl3`、`Tls`，写 `[Net.SecurityProtocolType]::Tls12` 会在赋值阶段抛 `PropertyAssignmentException`（报错「可能的枚举值为 Ssl3、Tls」），下载还没开始就死。用数值 `3072` 经 `[Enum]::ToObject([Net.SecurityProtocolType],3072)` 设置并包 try/catch；兜底顺序里优先 Win7+ 自带的 `certutil.exe`（走系统 HTTP 栈，不受 .NET 版本限制）。
-- **CI 按 tag 检出，推 main 不影响已打的 tag**：workflow 里有「切到目标 tag 的代码」步骤（`git checkout --force refs/tags/$TAG`），产物（含 `KimiPetUpdater.bat` 附件）全部来自那个 tag 的 commit。把最新代码推到 main、却拿旧 tag 触发构建，发出来的仍是旧附件，而且 CI 一路绿灯。**发版 tag 必须打在包含最新代码的 commit 上**，或删掉旧 tag 重打。「整理产物」步骤已加 `grep -q 'call :scan'` 校验，遇到旧 bat 直接 `::error::` 拦下。
-- **Release 不能是草案（draft）**：`/releases/latest` 忽略 draft 与 prerelease，`KimiPetUpdater.bat` 走 `latest/download/` 直链，草案时会拿到上一个正式版甚至把本地新版覆盖成旧版；草案附件匿名下载还返回 404。CI 固定 `draft: false`。发版后刷新页面确认 tag 出现在列表且标着 Latest。
-- **老机器上别指望命令行下载**：Win7 没有 `curl.exe`、系统常未启用 TLS 1.2、火绒等会拦 `certutil` / PowerShell，三条工具可能全灭而浏览器却完全能打开 GitHub。`KimiPetUpdater.bat` 要有「浏览器下载 + 拾取」模式：扫描 Downloads / 桌面 / 脚本目录 / TEMP 里已下载的 exe，校验 PE 后直接替换，彻底绕开命令行下载。安全软件点「允许」后要**重新运行一次**（弹窗到达时工具往往已放弃）。
-- **网络请求一律跑工作线程，主线程只弹框**：`do_update()` 必须立刻返回（实测 0ms），API 与下载都在 `upd_thread`，看门狗另起线程；主线程 `WM_TIMER` 照常驱动 `step()`+`render()`。验证口径：本地起慢速服务器（>20 秒下载），用真实 `upd_thread` + 消息泵实跑，断言下载期间 UI 计时器帧数持续增长（22 秒应有 200+ 帧），且连点「检查更新」第二次被 `g_updBusy` 忽略。
+- **CI 按 tag 检出，推 main 不影响已打的 tag**：workflow 里有「切到目标 tag 的代码」步骤（`git checkout --force refs/tags/$TAG`），产物全部来自那个 tag 的 commit。把最新代码推到 main、却拿旧 tag 触发构建，发出来的仍是旧附件，而且 CI 一路绿灯。**发版 tag 必须打在包含最新代码的 commit 上**，或删掉旧 tag 重打。
+- **Release 不能是草案（draft）**：`/releases/latest` 忽略 draft 与 prerelease，「检查更新」按 `latest` 判断，草案时会拿不到新版甚至把本地新版覆盖成旧版；草案附件匿名下载还返回 404。CI 固定 `draft: false`。发版后刷新页面确认 tag 出现在列表且标着 Latest。
+- **网络请求一律跑工作线程，主线程只弹框 / 做自替换**：`do_update()` 必须立刻返回（实测 0ms），API 与下载都在 `upd_thread`，看门狗另起线程；主线程 `WM_TIMER` 照常驱动 `step()`+`render()`。验证口径：本地起慢速服务器（>20 秒下载），用真实 `upd_thread` + 消息泵实跑，断言下载期间 UI 计时器帧数持续增长（22 秒应有 200+ 帧），且连点「检查更新」第二次被 `g_updBusy` 忽略。
 - **别把下载塞进【API 的】短超时看门狗，但下载也必须有自己的看门狗**：1.3「修卡顿」把下载 exe 包进 20 秒的 API 看门狗，结果检测得到更新、exe 永远下不下来；后来改成「下载完全不接看门狗」，又留下一个更隐蔽的坑——`InternetReadFile` 若永久阻塞，`g_updBusy` 永远不清零，用户再点「检查更新」毫无反应。正确做法是按阶段分阈值（API 30 秒 / 下载 330 秒），连接超时单独设短一些，接收间隔给足（只要持续来数据再慢也不掐），并且**超时后必须关掉正在阻塞的 hUrl 句柄、给明确提示、释放 `g_updBusy` 允许重试**。只关父句柄 `hInet` 在部分实现里唤不醒阻塞读。同理，别因为一次沙盒里的 403 就把用户实证可用的 WinINet 链路整个换掉 —— 先查自己上一版改了什么。
 - **检查更新出错时直接贴原始响应，不写猜测性提示**：弹框只给事实字段（阶段 / HTTP 状态 / Win32 错误码 / URL / WinINet 扩展文本），然后原样附上服务器响应体；禁止「可能是没网」「代理/防火墙拦截」「稍后再试即可」「球不会卡住」这类话术 —— 用户要看出问题就得看原文。为此 **4xx/5xx 也必须把 body 读回来**并返回给上层（失败时 `*out` 非空，调用方 free），不能像早期那样 `if(code>=400) return 0` 直接丢掉。200 但读不到 `tag_name`、版本号解析失败、缺 asset、下载拿到非 PE 内容，也都要贴原始 JSON / HTML。UTF-8 解码 + 控制字符替换 + 显示 2000 字符上限 + 完整字节落盘 `%TEMP%\KimiPet_update_error.txt`；每轮 `do_update()` 开头清掉上一轮的诊断文件，无响应体时也要清，别留旧内容。兜底链路失败时保留已落盘的 `dst`，由 `grab_dst()` 读回错误页（每条链路失败后立刻抓，下一条开头的 `DeleteFileW` 会抹掉）。
 - **Win7 下载别指望命令行工具，要有一层纯 C 的 WinHTTP 兜底**：Win7 不自带 `curl.exe`（Win10 起才有）、系统 Schannel 常未启用 TLS 1.2、火绒等会拦 `certutil.exe` / PowerShell，而浏览器能开 GitHub 只说明浏览器自己的 TLS 栈通。WinHTTP 5.1 是系统 DLL，显式设 `WINHTTP_OPTION_SECURE_PROTOCOLS` 请求 TLS 1.2 后能绕开大半限制；设置失败要忽略继续，别因一个 option 判死。链接用 `-lwinhttp`，**不是 `-lws2_32`**（本程序不用裸 Winsock，别照搬通用 Winsock 教程的链接参数）。
@@ -114,11 +112,25 @@ KimiPet_源码与程序
 
 ## 五、模组贴图（shape = image）
 
-- **贴图示例不做成内置模组**：内置模组固定就 `BUILTIN_MODS[]` 里那 3 个（兔耳 / 猫耳（白）/ 锚点调试），别往里加第 4 个示例 ini，也别把 PNG 字节编进 exe 或预置到交付包 `exe/mod/`。图片由用户自己放进 `mod\`，`mods_scan()` 扫到 ini 时由 `mods_load_textures()` 现读现解码。`mods_write_builtin()` 只写 ini 文本，不再写任何二进制附件。
+- **"贴图示例"和"正式装扮模组"是两回事**：教学性质的 `贴图示例.ini` 不做内置；但用户点名的装扮（如「星星眼」）是正式内置模组，可以进 `BUILTIN_MODS[]`，也允许带 PNG 附件。别拿前一条规则拒绝用户新增内置模组。
+- **带 PNG 的内置模组要同步四处**：`BUILTIN_MODS[]`（ini 文本）、`BUILTIN_IMGS[]`（写盘用的 PNG 字节，数据放 `builtin_png.h`）、`builtin_png.h` 本身、交付包 `exe/mod/` 里的预置文件。`BUILTIN_IMGS[].file` 必须和 ini 里 `src =` 的文件名**逐字一致**，否则 `mods_load_textures()` 找不到图，模组会静默不显示。
+- **PNG 附件只在 Windows 构建里编**：`builtin_png.h` 与 `BUILTIN_IMGS[]` 都包在 `#ifndef RENDER_TEST` 里，纯逻辑测试不编译这几十 KB 二进制数据；`mods_write_builtin()` 写 PNG 的循环同理。
+- **用户给的图片常带黑底**：先把黑底抠成透明再编进 exe，否则贴上去是一个黑方块。抠完要目视确认边缘没有黑边，缩到 128×128 左右就够贴在眼睛上了。
+- **图片由 `mods_write_builtin()` 写进 `mod\`，不是从 exe 内直接解码**：老用户 `mod` 目录已存在时也会走补齐逻辑（只补不覆盖），所以既能拿到新装扮，又不会改掉用户自己换过的图。`mods_scan()` 末尾 `mods_load_textures()` 按文件名去重复用，同一张图被多个 part 引用只解码一次。
 
 - **PNG 解码自己写，别引第三方库**：`tex.c` 里自带 inflate（stored / fixed / dynamic Huffman 三种块），支持 8 位非隔行 PNG 的 RGBA / RGB / 灰度 / LA / 调色板 + `tRNS`、5 种行滤波，输出统一 RGBA8。不要为了省事去链 zlib / libpng / GDI+ —— 目标是单个 exe、Win7 也能跑，多一个 DLL 依赖就多一类现场问题。
 - **IDAT 是 zlib 流不是裸 deflate**：拼起来的 IDAT 前面有 2 字节 CMF/FLG、末尾 4 字节 adler32，`inflate_raw` 之前要剥掉并校验 FCHECK；只吃裸 deflate 会让所有 PNG 都解码失败。
 - **`src` 必须是 `mod\` 里的纯文件名**：解析时用 `safe_src()` 挡掉路径分隔符、盘符、控制字符和 `..` 开头，别让一个 ini 把 exe 旁边的任意文件读进来。中文文件名要保留（ini 是 UTF-8）。
 - **贴图缓存跟模组池同生命周期**：`g_tex[]` 由 `mods_clear()` 统一释放，`mods_scan()` 末尾 `mods_load_textures()` 按文件名去重复用；解析阶段只存文件名、不加载，保持 `mod_parse_text()` 可在无 Windows API 的纯逻辑测试里跑。
 - **绘制走 `buf_blend`，本体空间单位与 SDF 图元一致**：`w`/`h` 和 `circle` 的 `r` 同一套单位，跟着 `ES` 缩放、跟着锚点 `rot` 旋转；`h<=0` 时按图片宽高比推算。双线性采样时四邻的 alpha 要一起插值，边缘 clamp。
-- **改了源文件清单要同步两个构建脚本**：`build.sh` 的 `SRCS` 和 `build.bat` 的两行 `gcc` 都要加 `tex.c`，漏一个 Windows 下就会链接失败。`build.bat` 保持纯 ASCII + CRLF。
+- **改了源文件清单要改 `build.sh` 的 `SRCS`**：加减 `.c` 文件时只此一处；漏了会链接失败。
+
+- **五官锚点只做「轻微跟随」，绝不新增表情绘制**：`nose` / `mouth` 在 `update_anchors()` 里先加一点 gaze 偏移（`ANCH_FACE_FOLLOW_X/Y`），再走 `anch_on_body()` 保留挤压 `sq` 与整球 roll。用户明确否决过给嘴加眨眼/张合/生气表情那套（`draw_mouth()` + 状态量），别再提、别再做。
+- **跟随系数必须远小于眼睛**：眼睛在球面上直接滑，单侧 gaze=0.8 时约走 2.8 个本体单位；鼻/嘴取 0.7/0.35 的量级，比例约 1:4。调到跟眼睛同幅度会让五官错位。正视（gaze=0）时偏移必须为 0，不许改变出厂外观。
+- **加锚点要同步四处**：`pet.h` 的枚举、`mod.c` 的 `ANCH_NAMES[]`（顺序必须与枚举一致）、`update_anchors()`、`锚点调试.ini` 里的调试点；别名放 `ANCH_ALIAS`。README 锚点表和介绍页 chips 也要跟上。
+- **`{"mouse","mouth"}` 是历史拼写笔误，保留兼容别删**：已有用户 ini 可能写了 `at = mouse`。新增别名时不要顺手把它改成正确拼写，那样会让老模组失效。
+
+- **项目里不放任何 `.bat` / `.cmd`**：交付包、Release 附件、CI、文档都不再出现 bat。下载页生成脚本会过滤掉 Release 里残留的 `.bat` 附件，不展示旧直链。
+- **更新完成用纯 C 自替换，不生成脚本**：`UPD_DO_REPLACE` 在主线程用 `MoveFileExW` 把运行中的 exe 改名成 `.bak`（Windows 允许同卷重命名正在运行的 exe），`CopyFileW` 把下载的新 exe 复制到原名，`ShellExecuteW` 启动后 `PostQuitMessage`；任一步失败就回滚、贴 Win32 错误码，旧 exe 必须保持可运行。新进程启动时删掉 `.bak`。别再退回写覆盖 bat 那套（OEM 编码、chcp、中文路径乱码）。
+
+- **「把某块信息做成弹窗」指的是换展示形式，不是删掉信息**：用户说「网页里做个弹窗显示关于」，是让网页顶部那条信息条变成 `<dialog>` 弹窗，软件仍要打开网页带 hash、网页仍要解析 hash。曾经理解成「软件改成 MessageBox + 删掉网页信息条和 hash 解析」，属于把整个功能拆没了，别再犯。
